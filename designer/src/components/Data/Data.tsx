@@ -4,6 +4,22 @@ import Loader from '../../common/Loader'
 import LoadingSteps from '../../common/LoadingSteps'
 import ModeToggle, { Mode } from '../ModeToggle'
 import ConfigEditor from '../ConfigEditor'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from '../ui/dropdown-menu'
+
+type Dataset = {
+  id: string
+  name: string
+  lastRun: Date
+  embedModel: string
+  numChunks: number
+  processedPercent: number // 0-100
+  version: string
+}
 
 const Data = () => {
   const [isDragging, setIsDragging] = useState(false)
@@ -13,6 +29,43 @@ const Data = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [searchValue, setSearchValue] = useState('')
   const [mode, setMode] = useState<Mode>('designer')
+
+  // Datasets state (ensure at least one dataset exists)
+  const [datasets /* setDatasets */] = useState<Dataset[]>([
+    {
+      id: 'default',
+      name: 'default-dataset',
+      lastRun: new Date(),
+      embedModel: 'text-embedding-3-large',
+      numChunks: 28500,
+      processedPercent: 100,
+      version: 'v2',
+    },
+  ])
+
+  // Map of fileKey -> array of dataset ids
+  const [fileAssignments, setFileAssignments] = useState<
+    Record<string, string[]>
+  >({})
+
+  const getFileKey = useCallback((file: File) => {
+    return `${file.name}:${file.size}:${file.lastModified}`
+  }, [])
+
+  const toggleFileDataset = useCallback(
+    (file: File, datasetId: string) => {
+      const key = getFileKey(file)
+      setFileAssignments(prev => {
+        const current = prev[key] ?? []
+        const isAssigned = current.includes(datasetId)
+        const next = isAssigned
+          ? current.filter(id => id !== datasetId)
+          : [...current, datasetId]
+        return { ...prev, [key]: next }
+      })
+    },
+    [getFileKey]
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -70,6 +123,13 @@ const Data = () => {
       ),
     [droppedFiles, searchValue]
   )
+
+  const formatLastRun = (d: Date) =>
+    new Intl.DateTimeFormat('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: '2-digit',
+    }).format(d)
 
   return (
     <div
@@ -140,32 +200,26 @@ const Data = () => {
             ) : (
               mode === 'designer' && (
                 <div className="grid grid-cols-2 gap-2 mb-6">
-                  {Array.from({ length: 2 }).map((_, index) => (
+                  {datasets.map(ds => (
                     <div
-                      key={index}
-                      className="w-full bg-card rounded-lg border border-border flex flex-col gap-2 p-4"
+                      key={ds.id}
+                      className="w-full bg-card rounded-lg border border-border flex flex-col gap-3 p-4 relative"
                     >
-                      <div className="text-sm">
-                        air-craft-maintenance-guides
+                      <button className="absolute right-3 top-3 text-xs bg-transparent text-primary hover:opacity-80 rounded-lg px-2 py-1">
+                        View
+                      </button>
+                      <div className="text-sm font-medium">{ds.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Last run on {formatLastRun(ds.lastRun)}
+                      </div>
+                      <div className="flex flex-row gap-2 items-center">
+                        <span className="text-[10px] tracking-wide text-primary-foreground bg-primary rounded-xl px-2.5 py-0.5">
+                          {ds.embedModel}
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Updated on 8/23/25
-                      </div>
-                      <div className="flex flex-row gap-2">
-                        <div className="text-xs text-primary-foreground bg-primary rounded-xl px-3 py-0.5">
-                          Embedded
-                        </div>
-                        <div className="text-xs text-primary-foreground bg-primary rounded-xl px-3 py-0.5">
-                          Chunked
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        more info here in a line
-                      </div>
-                      <div className="flex justify-end">
-                        <button className="text-sm bg-transparent text-primary hover:opacity-80 rounded-lg px-2 py-1 w-fit">
-                          View raw data
-                        </button>
+                        {ds.numChunks.toLocaleString()} chunks •{' '}
+                        {ds.processedPercent}% processed • {ds.version}
                       </div>
                     </div>
                   ))}
@@ -246,13 +300,52 @@ const Data = () => {
                     </div>
                     <div className="w-1/2 flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        <div className="text-muted-foreground text-xs">
-                          MX-log-data
-                        </div>
-                        <FontIcon
-                          type="chevron-down"
-                          className="w-4 h-4 text-muted-foreground"
-                        />
+                        {(() => {
+                          const key = getFileKey(file)
+                          const assignedIds = fileAssignments[key] ?? []
+                          const assignedNames = assignedIds
+                            .map(id => datasets.find(d => d.id === id)?.name)
+                            .filter(Boolean) as string[]
+                          const label =
+                            assignedNames.length === 0
+                              ? 'Unassigned'
+                              : assignedNames.length === 1
+                                ? assignedNames[0]
+                                : `${assignedNames.length} datasets`
+                          return (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="text-xs flex items-center gap-2 border border-input rounded-md px-2 py-1 bg-card text-foreground">
+                                  <span className="truncate max-w-[160px]">
+                                    {label}
+                                  </span>
+                                  <FontIcon
+                                    type="chevron-down"
+                                    className="w-3 h-3 text-muted-foreground"
+                                  />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent className="w-56">
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                  Assign to datasets
+                                </div>
+                                {datasets.map(ds => (
+                                  <DropdownMenuCheckboxItem
+                                    key={ds.id}
+                                    checked={(
+                                      fileAssignments[key] ?? []
+                                    ).includes(ds.id)}
+                                    onCheckedChange={() =>
+                                      toggleFileDataset(file, ds.id)
+                                    }
+                                  >
+                                    {ds.name}
+                                  </DropdownMenuCheckboxItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )
+                        })()}
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="flex items-center gap-2">
