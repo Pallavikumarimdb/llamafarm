@@ -335,12 +335,16 @@ const Data = () => {
     [rawFiles, searchValue]
   )
 
-  const formatLastRun = (d: Date) =>
-    new Intl.DateTimeFormat('en-US', {
+  const formatLastRun = (d: Date) => {
+    if (!(d instanceof Date) || isNaN(d.getTime())) {
+      return '-'
+    }
+    return new Intl.DateTimeFormat('en-US', {
       month: 'numeric',
       day: 'numeric',
       year: '2-digit',
     }).format(d)
+  }
 
   return (
     <div

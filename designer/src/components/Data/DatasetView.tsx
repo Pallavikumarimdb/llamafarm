@@ -146,7 +146,9 @@ function DatasetView() {
         `lf_dataset_selected_version_${datasetId}`,
         selectedId
       )
-    } catch {}
+    } catch (err) {
+      console.error('Failed to persist dataset versions to localStorage:', err)
+    }
   }
 
   const formatRun = (iso: string) => {
