@@ -1,8 +1,10 @@
 import { Routes, Route } from 'react-router-dom'
 import Header from './components/Header'
+import { Toaster } from './components/ui/toast'
 import Home from './Home'
 import Chat from './Chat'
 import Data from './components/Data/Data'
+import DatasetView from './components/Data/DatasetView'
 import Prompt from './components/Prompt/Prompt'
 import Test from './components/Test'
 import Dashboard from './components/Dashboard/Dashboard'
@@ -13,6 +15,7 @@ function App() {
   return (
     <main className="h-screen w-full">
       <Header />
+      <Toaster />
       <div className="h-full w-full">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -21,6 +24,7 @@ function App() {
           <Route path="/chat" element={<Chat />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="data" element={<Data />} />
+            <Route path="data/:datasetId" element={<DatasetView />} />
             <Route path="models" element={<Models />} />
             <Route path="prompt" element={<Prompt />} />
             <Route path="test" element={<Test />} />
