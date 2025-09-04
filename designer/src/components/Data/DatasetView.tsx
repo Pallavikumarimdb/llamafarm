@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import FontIcon from '../../common/FontIcon'
+import Loader from '../../common/Loader'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Badge } from '../ui/badge'
@@ -143,6 +144,108 @@ function DatasetView() {
     createdAt: string // ISO
   }
   const [versions, setVersions] = useState<DatasetVersion[]>([])
+
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false)
+  const [isDropped, setIsDropped] = useState(false)
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragging(false)
+  }
+
+  const handleFilesUpload = async (list: File[]) => {
+    if (!datasetId || !activeProject?.namespace || !activeProject?.project) {
+      toast({
+        message: 'Missing required information for upload',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (list.length === 0) return
+
+    const converted = list.map(f => ({
+      id: `${f.name}:${f.size}:${f.lastModified}`,
+      name: f.name,
+      size: f.size,
+      lastModified: f.lastModified,
+      type: f.type,
+    }))
+
+    try {
+      setUploadStatus(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          converted.map(rf => [rf.id, 'processing' as const])
+        ),
+      }))
+
+      for (const file of list) {
+        try {
+          await uploadMutation.mutateAsync({
+            namespace: activeProject.namespace,
+            project: activeProject.project,
+            dataset: datasetId,
+            file,
+          })
+        } catch (error) {
+          console.error(`Failed to upload ${file.name}:`, error)
+          toast({
+            message: `Failed to upload ${file.name}`,
+            variant: 'destructive',
+          })
+          const fileId = `${file.name}:${file.size}:${file.lastModified}`
+          setUploadStatus(prev => {
+            const next = { ...prev }
+            delete (next as any)[fileId]
+            return next
+          })
+          continue
+        }
+      }
+
+      setTimeout(() => {
+        setUploadStatus(prev => ({
+          ...prev,
+          ...Object.fromEntries(converted.map(rf => [rf.id, 'done' as const])),
+        }))
+        toast({
+          message: `Successfully uploaded ${list.length} file${list.length > 1 ? 's' : ''}`,
+          variant: 'default',
+        })
+        setTimeout(() => {
+          setUploadStatus(prev => {
+            const next = { ...prev }
+            for (const rf of converted) delete (next as any)[rf.id]
+            return next
+          })
+        }, 1500)
+      }, 500)
+    } catch (error) {
+      console.error('Upload error:', error)
+      toast({ message: 'Failed to upload files', variant: 'destructive' })
+      setUploadStatus(prev => {
+        const next = { ...prev }
+        for (const rf of converted) delete (next as any)[rf.id]
+        return next
+      })
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDropped(true)
+    setTimeout(() => {
+      setIsDragging(false)
+      setIsDropped(false)
+    }, 1000)
+    const files = Array.from(e.dataTransfer.files)
+    handleFilesUpload(files)
+  }
 
   // Load dataset metadata from API or create fallback
   useEffect(() => {
@@ -386,7 +489,12 @@ function DatasetView() {
   }, [strategyId])
 
   return (
-    <div className="h-full w-full flex flex-col gap-3 pb-40">
+    <div
+      className="h-full w-full flex flex-col gap-3 pb-40"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <nav className="text-sm md:text-base flex items-center gap-1.5 mb-3">
         <button
           className="text-teal-600 dark:text-teal-400 hover:underline"
@@ -656,59 +764,27 @@ function DatasetView() {
         </div>
       )}
 
-      {/* Processing strategy */}
-      <section className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium">Processing strategy</h3>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm">
-              Change
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">Parsing</div>
-            <Input value="PDF-aware" readOnly className="bg-background" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">Chunk size</div>
-            <Input value="800" readOnly className="bg-background" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="text-xs text-muted-foreground">Overlap</div>
-            <Input value="100" readOnly className="bg-background" />
-          </div>
-        </div>
-      </section>
+      {/* Processing strategy and Embedding model sections removed per request */}
 
-      {/* Embedding model */}
-      <section className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium">Embedding model</h3>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm">
-              Change
-            </Button>
+      {isDragging && (
+        <div className="w-full h-full flex flex-col items-center justify-center border border-dashed rounded-lg p-4 gap-2 transition-colors border-input">
+          <div className="flex flex-col items-center justify-center gap-4 text-center my-[56px] text-primary">
+            {isDropped ? (
+              <Loader />
+            ) : (
+              <FontIcon
+                type="upload"
+                className="w-10 h-10 text-blue-200 dark:text-white"
+              />
+            )}
+            <div className="text-xl text-foreground">Drop data here</div>
           </div>
+          <p className="max-w-[527px] text-sm text-muted-foreground text-center mb-10">
+            You can upload PDFs, CSVs, or other documents directly to this
+            dataset.
+          </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="default" size="sm" className="rounded-xl">
-            text-embedding-3-large
-          </Badge>
-          <Badge variant="secondary" size="sm" className="rounded-xl">
-            Active
-          </Badge>
-          <Badge variant="secondary" size="sm" className="rounded-xl">
-            Run v3
-          </Badge>
-        </div>
-        <div className="mt-2 text-xs">
-          <a className="text-primary hover:underline" href="#">
-            OpenAI API (source here)
-          </a>
-        </div>
-      </section>
+      )}
 
       {/* Raw data */}
       <section className="rounded-lg border border-border bg-card p-4 mb-40">
