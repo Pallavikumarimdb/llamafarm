@@ -896,11 +896,11 @@ function ChangeEmbeddingModel() {
               <Label className="text-xs text-muted-foreground">API Key</Label>
               <div className="relative">
                 <Input
-                  type={showApiKey ? 'text' : 'password'}
+                  type="text"
                   placeholder="enter here"
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
-                  className="h-9 pr-9"
+                  className={`h-9 pr-9 ${showApiKey ? '' : '[-webkit-text-security:disc]'}`}
                 />
                 <button
                   type="button"
@@ -1102,7 +1102,9 @@ function ChangeEmbeddingModel() {
                 }
               }}
             >
-              Download and use
+              {confirmCtx?.runtime === 'Cloud'
+                ? 'Use cloud model'
+                : 'Download and use'}
             </Button>
           </DialogFooter>
         </DialogContent>
