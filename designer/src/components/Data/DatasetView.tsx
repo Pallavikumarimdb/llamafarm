@@ -77,15 +77,6 @@ function DatasetView() {
     [dataset?.name, datasetId]
   )
 
-  type RawFile = {
-    id: string
-    name: string
-    size: number
-    lastModified: number
-    type?: string
-    fullHash?: string // For API files, stores the complete hash
-  }
-
   // Get current dataset from API response
   const currentApiDataset = useMemo(() => {
     if (!datasetsResponse?.datasets || !datasetId) return null
