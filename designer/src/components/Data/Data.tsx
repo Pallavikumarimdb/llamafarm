@@ -165,7 +165,6 @@ const Data = () => {
 
   // Simple edit modal state
   const [isEditOpen, setIsEditOpen] = useState(false)
-  const [editDatasetId, setEditDatasetId] = useState<string>('')
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
 
@@ -442,7 +441,6 @@ const Data = () => {
                               onClick={e => {
                                 e.stopPropagation()
                                 // open simple edit modal
-                                setEditDatasetId(ds.id)
                                 setEditName(ds.name)
                                 setEditDescription(ds.description || '')
                                 setIsEditOpen(true)
