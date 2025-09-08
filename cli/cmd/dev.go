@@ -48,8 +48,4 @@ var devCmd = &cobra.Command{
 func init() {
 	// Attach to root
 	rootCmd.AddCommand(devCmd)
-	// Provide a hint if server URL isn't set
-	if serverURL == "" {
-		fmt.Fprintln(os.Stderr, "Hint: use --server-url to point to a specific server")
-	}
 }
