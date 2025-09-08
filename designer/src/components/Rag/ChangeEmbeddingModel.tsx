@@ -896,11 +896,11 @@ function ChangeEmbeddingModel() {
               <Label className="text-xs text-muted-foreground">API Key</Label>
               <div className="relative">
                 <Input
-                  type="text"
+                  type="password"
                   placeholder="enter here"
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
-                  className={`h-9 pr-9 ${showApiKey ? '' : '[-webkit-text-security:disc]'}`}
+                  className="h-9 pr-9"
                 />
                 <button
                   type="button"

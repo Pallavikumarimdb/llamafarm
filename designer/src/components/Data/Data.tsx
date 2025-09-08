@@ -165,6 +165,7 @@ const Data = () => {
 
   // Simple edit modal state
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editDatasetId, setEditDatasetId] = useState<string>('')
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
 
@@ -441,6 +442,7 @@ const Data = () => {
                               onClick={e => {
                                 e.stopPropagation()
                                 // open simple edit modal
+                                setEditDatasetId(ds.id)
                                 setEditName(ds.name)
                                 setEditDescription(ds.description || '')
                                 setIsEditOpen(true)
@@ -550,7 +552,19 @@ const Data = () => {
               <Button variant="secondary">Cancel</Button>
             </DialogClose>
             <Button
-              onClick={() => setIsEditOpen(false)}
+              onClick={() => {
+                const id = editDatasetId.trim()
+                const name = editName.trim()
+                if (!id || !name) return
+                try {
+                  localStorage.setItem(`lf_dataset_name_${id}`, name)
+                  localStorage.setItem(
+                    `lf_dataset_description_${id}`,
+                    editDescription
+                  )
+                } catch {}
+                setIsEditOpen(false)
+              }}
               disabled={!editName.trim()}
             >
               Save

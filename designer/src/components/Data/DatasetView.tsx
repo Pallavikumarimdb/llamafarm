@@ -137,9 +137,15 @@ function DatasetView() {
   }>({})
   const [searchValue, setSearchValue] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [uploadStatus, setUploadStatus] = useState<
-    Record<string, 'processing' | 'done'>
-  >({})
+  type FileUploadStatus = {
+    id: string
+    name: string
+    status: 'pending' | 'uploading' | 'success' | 'error'
+    error?: string
+  }
+  const [fileUploadStatuses, setFileUploadStatuses] = useState<
+    FileUploadStatus[]
+  >([])
 
   type DatasetVersion = {
     id: string // e.g., v1, v2
@@ -152,6 +158,30 @@ function DatasetView() {
   const [isDropped, setIsDropped] = useState(false)
   // Strategy modal search
   const [strategyQuery, setStrategyQuery] = useState('')
+
+  // Helpers to validate available strategies for this view
+  type RagStrategyType = import('../Rag/strategies').RagStrategy
+  const isValidRagStrategy = (s: any): s is RagStrategyType => {
+    return (
+      !!s &&
+      typeof s.id === 'string' &&
+      typeof s.name === 'string' &&
+      typeof s.description === 'string' &&
+      typeof s.isDefault === 'boolean' &&
+      typeof s.datasetsUsing === 'number'
+    )
+  }
+  const getCustomStrategies = (): RagStrategyType[] => {
+    try {
+      const raw = localStorage.getItem('lf_custom_strategies')
+      if (!raw) return []
+      const arr = JSON.parse(raw) as RagStrategyType[]
+      if (!Array.isArray(arr)) return []
+      return arr.filter(isValidRagStrategy)
+    } catch {
+      return []
+    }
+  }
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -172,83 +202,57 @@ function DatasetView() {
     }
     if (list.length === 0) return
 
-    const converted = list.map(f => ({
+    // Initialize upload statuses
+    const initialStatuses: FileUploadStatus[] = list.map(f => ({
       id: `${f.name}:${f.size}:${f.lastModified}`,
       name: f.name,
-      size: f.size,
-      lastModified: f.lastModified,
-      type: f.type,
+      status: 'pending',
     }))
+    setFileUploadStatuses(initialStatuses)
 
-    try {
-      setUploadStatus(prev => ({
-        ...prev,
-        ...Object.fromEntries(
-          converted.map(rf => [rf.id, 'processing' as const])
-        ),
-      }))
-
-      for (const file of list) {
+    await Promise.all(
+      list.map(async (file, idx) => {
+        setFileUploadStatuses(prev =>
+          prev.map((s, i) => (i === idx ? { ...s, status: 'uploading' } : s))
+        )
         try {
           await uploadMutation.mutateAsync({
-            namespace: activeProject.namespace,
-            project: activeProject.project,
-            dataset: datasetId,
+            namespace: activeProject.namespace!,
+            project: activeProject.project!,
+            dataset: datasetId!,
             file,
           })
-        } catch (error) {
+          setFileUploadStatuses(prev =>
+            prev.map((s, i) => (i === idx ? { ...s, status: 'success' } : s))
+          )
+        } catch (error: any) {
           console.error(`Failed to upload ${file.name}:`, error)
           toast({
             message: `Failed to upload ${file.name}`,
             variant: 'destructive',
           })
-          const fileId = `${file.name}:${file.size}:${file.lastModified}`
-          setUploadStatus(prev => {
-            const next = { ...prev }
-            delete (next as any)[fileId]
-            return next
-          })
-          continue
+          setFileUploadStatuses(prev =>
+            prev.map((s, i) =>
+              i === idx
+                ? {
+                    ...s,
+                    status: 'error',
+                    error: error?.message || 'Upload failed',
+                  }
+                : s
+            )
+          )
         }
-      }
-
-      setTimeout(() => {
-        setUploadStatus(prev => ({
-          ...prev,
-          ...Object.fromEntries(converted.map(rf => [rf.id, 'done' as const])),
-        }))
-        toast({
-          message: `Successfully uploaded ${list.length} file${list.length > 1 ? 's' : ''}`,
-          variant: 'default',
-        })
-        setTimeout(() => {
-          setUploadStatus(prev => {
-            const next = { ...prev }
-            for (const rf of converted) delete (next as any)[rf.id]
-            return next
-          })
-        }, 1500)
-      }, 500)
-    } catch (error) {
-      console.error('Upload error:', error)
-      toast({ message: 'Failed to upload files', variant: 'destructive' })
-      setUploadStatus(prev => {
-        const next = { ...prev }
-        for (const rf of converted) delete (next as any)[rf.id]
-        return next
       })
-    }
+    )
   }
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsDropped(true)
-    setTimeout(() => {
-      setIsDragging(false)
-      setIsDropped(false)
-    }, 1000)
+    setIsDragging(false)
     const files = Array.from(e.dataTransfer.files)
-    handleFilesUpload(files)
+    handleFilesUpload(files).finally(() => setIsDropped(false))
   }
 
   // Load dataset metadata from API or create fallback
@@ -454,10 +458,18 @@ function DatasetView() {
   useEffect(() => {
     if (!datasetId) return
     try {
-      const v =
-        localStorage.getItem(`lf_dataset_strategy_name_${datasetId}`) ||
-        'PDF Simple'
-      setStrategyName(v)
+      const stored = localStorage.getItem(
+        `lf_dataset_strategy_name_${datasetId}`
+      )
+      const availableNames = [
+        ...defaultStrategies,
+        ...getCustomStrategies(),
+      ].map(s => s.name)
+      if (typeof stored === 'string' && availableNames.includes(stored)) {
+        setStrategyName(stored)
+      } else {
+        setStrategyName('PDF Simple')
+      }
     } catch {
       setStrategyName('PDF Simple')
     }
@@ -910,87 +922,9 @@ function DatasetView() {
             const list = e.target.files ? Array.from(e.target.files) : []
             if (list.length === 0) return
 
-            // Convert to RawFile shape for UI
-            const converted: RawFile[] = list.map(f => ({
-              id: `${f.name}:${f.size}:${f.lastModified}`,
-              name: f.name,
-              size: f.size,
-              lastModified: f.lastModified,
-              type: f.type,
-            }))
-
             try {
-              // Set processing status for UI feedback
-              setUploadStatus(prev => ({
-                ...prev,
-                ...Object.fromEntries(
-                  converted.map(rf => [rf.id, 'processing' as const])
-                ),
-              }))
-
-              // Upload each file to the API
-              for (const file of list) {
-                try {
-                  await uploadMutation.mutateAsync({
-                    namespace: activeProject.namespace,
-                    project: activeProject.project,
-                    dataset: datasetId,
-                    file,
-                  })
-                } catch (error) {
-                  console.error(`Failed to upload ${file.name}:`, error)
-                  toast({
-                    message: `Failed to upload ${file.name}`,
-                    variant: 'destructive',
-                  })
-                  // Remove from processing status on error
-                  const fileId = `${file.name}:${file.size}:${file.lastModified}`
-                  setUploadStatus(prev => {
-                    const next = { ...prev }
-                    delete (next as any)[fileId]
-                    return next
-                  })
-                  continue
-                }
-              }
-
-              // Files will be updated via API refresh after upload completes
-
-              // Show success status
-              setTimeout(() => {
-                setUploadStatus(prev => ({
-                  ...prev,
-                  ...Object.fromEntries(
-                    converted.map(rf => [rf.id, 'done' as const])
-                  ),
-                }))
-                toast({
-                  message: `Successfully uploaded ${list.length} file${list.length > 1 ? 's' : ''}`,
-                  variant: 'default',
-                })
-
-                // Clear status after delay
-                setTimeout(() => {
-                  setUploadStatus(prev => {
-                    const next = { ...prev }
-                    for (const rf of converted) delete (next as any)[rf.id]
-                    return next
-                  })
-                }, 1500)
-              }, 500)
-            } catch (error) {
-              console.error('Upload error:', error)
-              toast({
-                message: 'Failed to upload files',
-                variant: 'destructive',
-              })
-              // Clear processing status on error
-              setUploadStatus(prev => {
-                const next = { ...prev }
-                for (const rf of converted) delete (next as any)[rf.id]
-                return next
-              })
-            }
+              await handleFilesUpload(list)
+            } catch {}
 
             // Reset input so same files can be picked again
             e.currentTarget.value = ''
@@ -1085,13 +1019,15 @@ function DatasetView() {
                             : `${Math.ceil(f.size / 1024)} KB`}
                         </div>
                         <div className="flex items-center gap-6">
-                          {uploadStatus[f.id] === 'processing' && (
+                          {fileUploadStatuses.find(s => s.id === f.id)
+                            ?.status === 'uploading' && (
                             <div className="flex items-center gap-1 text-muted-foreground">
                               <FontIcon type="fade" className="w-4 h-4" />
                               <span className="text-xs">Processing</span>
                             </div>
                           )}
-                          {uploadStatus[f.id] === 'done' && (
+                          {fileUploadStatuses.find(s => s.id === f.id)
+                            ?.status === 'success' && (
                             <FontIcon
                               type="checkmark-outline"
                               className="w-4 h-4 text-teal-600 dark:text-teal-400"

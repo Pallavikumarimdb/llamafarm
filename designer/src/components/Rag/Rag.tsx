@@ -40,6 +40,7 @@ function Rag() {
   // Derive display strategies with local overrides
   const strategies: RagStrategy[] = defaultStrategies
 
+  // Validate that an object is a well-formed RagStrategy
   const isValidRagStrategy = (s: any): s is RagStrategy => {
     return (
       !!s &&
@@ -50,6 +51,7 @@ function Rag() {
       typeof s.datasetsUsing === 'number'
     )
   }
+
   const getCustomStrategies = (): RagStrategy[] => {
     try {
       const raw = localStorage.getItem('lf_custom_strategies')
@@ -67,11 +69,15 @@ function Rag() {
     } catch {}
   }
   const addCustomStrategy = (s: RagStrategy) => {
-    if (!isValidRagStrategy(s)) return
     const list = getCustomStrategies()
-    if (list.some(x => x.id === s.id)) return
+    const exists = list.some(x => x.id === s.id)
+    if (exists) {
+      toast({ message: 'Strategy id already exists', variant: 'destructive' })
+      return
+    }
     list.push(s)
     saveCustomStrategies(list)
+    setMetaTick(t => t + 1)
   }
   const removeCustomStrategy = (id: string) => {
     const list = getCustomStrategies().filter(s => s.id !== id)
