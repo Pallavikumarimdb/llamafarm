@@ -43,6 +43,7 @@ function Versions() {
     }[]
     dataChunks?: { dataset: string; chunks: number }[]
     ragStrategies?: { id: string; name: string }[]
+    status?: 'packaging' | 'success' | 'stopped'
   }
 
   const [rows, setRows] = useState<VersionRow[]>(() => {
@@ -186,7 +187,7 @@ function Versions() {
           <thead className="bg-muted">
             <tr>
               <th className="text-left px-4 py-2 w-[40%]">Name</th>
-              <th className="text-left px-4 py-2">Description</th>
+              <th className="text-left px-4 py-2">Package data</th>
               <th className="text-left px-4 py-2 whitespace-nowrap">
                 Package date
               </th>
@@ -232,9 +233,29 @@ function Versions() {
                     </div>
                   </td>
                   <td className="px-4 py-3 align-top text-muted-foreground">
-                    <div className="line-clamp-2 max-w-[52ch]">
-                      {v.description}
-                    </div>
+                    {v.status === 'packaging' ? (
+                      <button
+                        type="button"
+                        className="text-xs text-teal-700 dark:text-teal-300 underline"
+                        onClick={e => {
+                          e.stopPropagation()
+                          // Bring up the package modal to foreground via event
+                          try {
+                            window.dispatchEvent(
+                              new CustomEvent('lf_open_package_modal')
+                            )
+                          } catch {}
+                        }}
+                      >
+                        Packaging… (view)
+                      </button>
+                    ) : v.status === 'stopped' ? (
+                      <div className="text-xs">Packaging stopped</div>
+                    ) : (
+                      <div className="line-clamp-2 max-w-[52ch]">
+                        {v.description}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 align-top whitespace-nowrap text-muted-foreground">
                     {v.date}

@@ -45,7 +45,20 @@ type ProviderProps = {
 export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
-  const [version, setVersion] = useState<string>('v1.0.1')
+  const [version, setVersion] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('lf_versions')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr) && arr.length > 0) {
+          const current = arr.find((v: any) => v?.isCurrent)
+          const picked = current || arr[0]
+          return picked?.name || picked?.id || 'v1.0.0'
+        }
+      }
+    } catch {}
+    return 'v1.0.0'
+  })
   const [versionError, setVersionError] = useState<string>('')
   const [savingTo, setSavingTo] = useState<string>(() => {
     try {
@@ -69,6 +82,7 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
   const [packStartTs, setPackStartTs] = useState<number | null>(null)
   const [copiedPath, setCopiedPath] = useState<boolean>(false)
   const [dirHandle, setDirHandle] = useState<any>(null)
+  const [isMinimized, setIsMinimized] = useState<boolean>(false)
 
   const versionExists = useCallback((name: string): boolean => {
     if (!name) return false
@@ -77,7 +91,14 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
       if (!raw) return false
       const arr = JSON.parse(raw)
       if (!Array.isArray(arr)) return false
-      return arr.some((v: any) => (v?.id || v?.name) === name)
+      return arr.some((v: any) => {
+        const matches = (v?.id || v?.name) === name
+        if (!matches) return false
+        // Allow reuse if previous attempt was stopped or still packaging
+        const status = v?.status
+        if (status === 'stopped' || status === 'packaging') return false
+        return true
+      })
     } catch {
       return false
     }
@@ -108,13 +129,48 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
     } catch {}
   }, [])
 
-  const openPackageModal = useCallback(() => setIsOpen(true), [])
+  const openPackageModal = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('lf_versions')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr) && arr.length > 0) {
+          const current = arr.find((v: any) => v?.isCurrent)
+          const picked = current || arr[0]
+          const nextName = picked?.name || picked?.id
+          if (nextName && typeof nextName === 'string') {
+            setVersion(nextName)
+          }
+        } else {
+          setVersion('v1.0.0')
+        }
+      } else {
+        setVersion('v1.0.0')
+      }
+    } catch {
+      setVersion('v1.0.0')
+    }
+    setIsMinimized(false)
+    setIsOpen(true)
+  }, [])
   const closePackageModal = useCallback(() => setIsOpen(false), [])
 
   const value = useMemo(
     () => ({ openPackageModal, closePackageModal }),
     [openPackageModal, closePackageModal]
   )
+
+  useEffect(() => {
+    const handler = () => {
+      openPackageModal()
+    }
+    window.addEventListener('lf_open_package_modal', handler as EventListener)
+    return () =>
+      window.removeEventListener(
+        'lf_open_package_modal',
+        handler as EventListener
+      )
+  }, [openPackageModal])
 
   // Fire lightweight canvas confetti on success (CDN script, no package install)
   useEffect(() => {
@@ -180,7 +236,17 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
   return (
     <PackageModalContext.Provider value={value}>
       {children}
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <Dialog
+        open={isOpen}
+        onOpenChange={open => {
+          if (!open && isPackaging) {
+            setIsMinimized(true)
+            setIsOpen(false)
+            return
+          }
+          setIsOpen(open)
+        }}
+      >
         <DialogContent
           className="sm:max-w-2xl top-[45%]"
           onOpenAutoFocus={e => e.preventDefault()}
@@ -564,9 +630,40 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                       ]
                       let stepIndex = 0
                       setCurrentStep(steps[stepIndex])
+                      // Insert a transient packaging row at the top for live feedback
+                      try {
+                        const raw0 = localStorage.getItem('lf_versions')
+                        const list0 = raw0 ? (JSON.parse(raw0) as any[]) : []
+                        // Clear current flags and drop any existing rows with same version id/name
+                        const cleared0 = (Array.isArray(list0) ? list0 : [])
+                          .map(v => ({ ...v, isCurrent: false }))
+                          .filter(v => (v?.id || v?.name) !== version)
+                        const transient = {
+                          id: version,
+                          name: version,
+                          description: description || 'Packaging…',
+                          date: new Date().toLocaleString(),
+                          isCurrent: true,
+                          size: '—',
+                          path: savingTo,
+                          status: 'packaging',
+                        }
+                        localStorage.setItem(
+                          'lf_versions',
+                          JSON.stringify([transient, ...cleared0])
+                        )
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent('lf_versions_updated', {
+                              detail: { source: 'packager-start' },
+                            })
+                          )
+                        } catch {}
+                      } catch {}
+
                       const id = window.setInterval(() => {
                         setProgress(p => {
-                          const next = Math.min(100, p + Math.random() * 6 + 2)
+                          const next = Math.min(100, p + Math.random() * 3 + 1)
                           if (
                             next > (stepIndex + 1) * 20 &&
                             stepIndex < steps.length - 1
@@ -593,13 +690,14 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                                   isCurrent: true,
                                   size: '2.34GB',
                                   path: savingTo,
+                                  status: 'success',
                                 }
+                                // Remove any prior entries with this version to avoid duplicates
                                 const cleared = (
                                   Array.isArray(list) ? list : []
-                                ).map(v => ({
-                                  ...v,
-                                  isCurrent: false,
-                                }))
+                                )
+                                  .filter(v => (v?.id || v?.name) !== version)
+                                  .map(v => ({ ...v, isCurrent: false }))
                                 const updated = [newEntry, ...cleared]
                                 localStorage.setItem(
                                   'lf_versions',
@@ -616,11 +714,14 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
 
                               setIsPackaging(false)
                               setIsSuccess(true)
-                            }, 600)
+                              // Always surface success modal
+                              setIsMinimized(false)
+                              setIsOpen(true)
+                            }, 1200)
                           }
                           return next
                         })
-                      }, 300)
+                      }, 600)
                       packagingTimerRef.current = id
                     }}
                     type="button"
@@ -634,7 +735,7 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                 <div className="text-xs text-muted-foreground">
                   Estimated size ~2.3GB
                 </div>
-                <div>
+                <div className="flex items-center gap-2">
                   <button
                     className="px-3 py-2 rounded-md text-sm bg-secondary text-secondary-foreground border border-input hover:bg-secondary/80"
                     onClick={() => {
@@ -645,10 +746,42 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                       setIsPackaging(false)
                       setProgress(0)
                       setCurrentStep('')
+                      try {
+                        const raw = localStorage.getItem('lf_versions')
+                        const list = raw ? (JSON.parse(raw) as any[]) : []
+                        // Mark the transient row as stopped
+                        const updated = (Array.isArray(list) ? list : []).map(
+                          v =>
+                            (v?.id || v?.name) === version
+                              ? { ...v, status: 'stopped' }
+                              : v
+                        )
+                        localStorage.setItem(
+                          'lf_versions',
+                          JSON.stringify(updated)
+                        )
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent('lf_versions_updated', {
+                              detail: { source: 'packager-stopped' },
+                            })
+                          )
+                        } catch {}
+                      } catch {}
                     }}
                     type="button"
                   >
                     Stop
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
+                    onClick={() => {
+                      setIsMinimized(true)
+                      setIsOpen(false)
+                    }}
+                    type="button"
+                  >
+                    Background
                   </button>
                 </div>
               </div>
@@ -680,6 +813,52 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {isMinimized && isPackaging ? (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setIsMinimized(false)
+            setIsOpen(true)
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setIsMinimized(false)
+              setIsOpen(true)
+            }
+          }}
+          className="fixed bottom-4 right-4 z-[100] w-[320px] rounded-lg border border-border bg-card text-card-foreground shadow-lg p-3 text-left"
+          aria-label="Show packaging progress"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium">{`Packaging ${version}...`}</div>
+            <button
+              type="button"
+              className="h-7 px-2 rounded-md border border-input text-xs hover:bg-accent/30"
+              onClick={e => {
+                e.stopPropagation()
+                setIsMinimized(false)
+                setIsOpen(true)
+              }}
+            >
+              View
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="h-2 w-full rounded-full bg-accent/20">
+              <div
+                className="h-2 rounded-full bg-primary transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground whitespace-nowrap">{`${Math.floor(progress)}%`}</div>
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground truncate">
+            {currentStep}
+          </div>
+        </div>
+      ) : null}
     </PackageModalContext.Provider>
   )
 }
