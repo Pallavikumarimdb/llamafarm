@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
 import PageActions from '../common/PageActions'
 import { Mode } from '../ModeToggle'
@@ -863,6 +863,20 @@ const Models = () => {
     },
   ])
 
+  // Initialize default model from persisted selection
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lf_default_project_model')
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      const savedId = parsed?.id
+      if (!savedId) return
+      setProjectModels(prev =>
+        prev.map(m => ({ ...m, isDefault: m.id === savedId }))
+      )
+    } catch {}
+  }, [])
+
   const addProjectModel = (m: InferenceModel) => {
     setProjectModels(prev => {
       if (prev.some(x => x.id === m.id)) return prev
@@ -887,6 +901,25 @@ const Models = () => {
   }
 
   const makeDefault = (id: string) => {
+    // Persist selection to localStorage and notify listeners
+    try {
+      const chosen = projectModels.find(m => m.id === id)
+      if (chosen) {
+        localStorage.setItem(
+          'lf_default_project_model',
+          JSON.stringify({ id: chosen.id, name: chosen.name })
+        )
+        if (typeof window !== 'undefined') {
+          try {
+            window.dispatchEvent(
+              new CustomEvent('lf:defaultProjectModelUpdated', {
+                detail: { id: chosen.id, name: chosen.name },
+              })
+            )
+          } catch {}
+        }
+      }
+    } catch {}
     setProjectModels(prev => prev.map(m => ({ ...m, isDefault: m.id === id })))
   }
 

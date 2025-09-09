@@ -26,11 +26,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <PackageModalProvider>
-          <BrowserRouter>
+        <BrowserRouter>
+          <PackageModalProvider>
             <App />
-          </BrowserRouter>
-        </PackageModalProvider>
+          </PackageModalProvider>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>

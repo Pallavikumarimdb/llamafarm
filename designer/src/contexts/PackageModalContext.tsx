@@ -17,6 +17,7 @@ import {
 } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
 import FontIcon from '../common/FontIcon'
+import { useNavigate } from 'react-router-dom'
 
 type PackageModalContextValue = {
   openPackageModal: () => void
@@ -42,6 +43,7 @@ type ProviderProps = {
 }
 
 export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [version, setVersion] = useState<string>('v1.0.1')
   const [versionError, setVersionError] = useState<string>('')
@@ -67,6 +69,19 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
   const [packStartTs, setPackStartTs] = useState<number | null>(null)
   const [copiedPath, setCopiedPath] = useState<boolean>(false)
   const [dirHandle, setDirHandle] = useState<any>(null)
+
+  const versionExists = useCallback((name: string): boolean => {
+    if (!name) return false
+    try {
+      const raw = localStorage.getItem('lf_versions')
+      if (!raw) return false
+      const arr = JSON.parse(raw)
+      if (!Array.isArray(arr)) return false
+      return arr.some((v: any) => (v?.id || v?.name) === name)
+    } catch {
+      return false
+    }
+  }, [])
 
   const openFolderPicker = useCallback(async () => {
     try {
@@ -528,6 +543,15 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                   <button
                     className="px-3 py-2 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
                     onClick={() => {
+                      // Prevent packaging if version invalid or duplicate
+                      if (!version || versionError || versionExists(version)) {
+                        if (versionExists(version)) {
+                          setVersionError(
+                            'A version with this name already exists'
+                          )
+                        }
+                        return
+                      }
                       setIsPackaging(true)
                       setPackStartTs(Date.now())
                       setProgress(0)
@@ -554,6 +578,42 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                             window.clearInterval(id)
                             packagingTimerRef.current = null
                             setTimeout(() => {
+                              // Persist new version into Versions table storage as current and top
+                              try {
+                                const raw = localStorage.getItem('lf_versions')
+                                const list = raw
+                                  ? (JSON.parse(raw) as any[])
+                                  : []
+                                const newEntry = {
+                                  id: version,
+                                  name: version,
+                                  description:
+                                    description || 'Packaged via modal',
+                                  date: new Date().toLocaleString(),
+                                  isCurrent: true,
+                                  size: '2.34GB',
+                                  path: savingTo,
+                                }
+                                const cleared = (
+                                  Array.isArray(list) ? list : []
+                                ).map(v => ({
+                                  ...v,
+                                  isCurrent: false,
+                                }))
+                                const updated = [newEntry, ...cleared]
+                                localStorage.setItem(
+                                  'lf_versions',
+                                  JSON.stringify(updated)
+                                )
+                                try {
+                                  window.dispatchEvent(
+                                    new CustomEvent('lf_versions_updated', {
+                                      detail: { source: 'packager' },
+                                    })
+                                  )
+                                } catch {}
+                              } catch {}
+
                               setIsPackaging(false)
                               setIsSuccess(true)
                             }, 600)
@@ -600,7 +660,7 @@ export const PackageModalProvider: React.FC<ProviderProps> = ({ children }) => {
                   onClick={() => {
                     setIsSuccess(false)
                     closePackageModal()
-                    // TODO: navigate to Versions when route available
+                    navigate('/chat/versions')
                   }}
                 >
                   Go to versions
