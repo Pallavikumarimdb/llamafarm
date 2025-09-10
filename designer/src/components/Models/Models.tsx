@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
 import PageActions from '../common/PageActions'
-import ConfigEditor from '../ConfigEditor'
+import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import { Mode } from '../ModeToggle'
 import FontIcon from '../../common/FontIcon'
 import Loader from '../../common/Loader'

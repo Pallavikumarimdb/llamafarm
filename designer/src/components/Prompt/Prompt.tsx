@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import ModeToggle, { Mode } from '../ModeToggle'
 import { Button } from '../ui/button'
-import ConfigEditor from '../ConfigEditor'
+import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import GeneratedOutputs from './GeneratedOutput/GeneratedOutputs'
 import { usePackageModal } from '../../contexts/PackageModalContext'
 
@@ -22,8 +22,8 @@ const Prompt = () => {
   const { openPackageModal } = usePackageModal()
 
   return (
-    <div className="h-full w-full flex flex-col gap-2 pb-32">
-      <div className="flex items-center justify-between mb-4">
+    <div className="h-full w-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h2 className="text-2xl ">
           {mode === 'designer' ? 'Prompt' : 'Config editor'}
         </h2>
@@ -38,12 +38,7 @@ const Prompt = () => {
         hasGeneratedOutputs ? (
           <GeneratedOutputs />
         ) : (
-          <>
-            <div className="text-muted-foreground">
-              Test, tune, and train. Add inputs, review outputs, and give
-              feedback to shape better prompts and guide the model toward your
-              ideal results.
-            </div>
+          <div className="flex-1 min-h-0 pb-6 overflow-auto">
             <div className="bg-card rounded-lg p-4 flex flex-col">
               <div className="mb-2">Expected outputs</div>
               <div className="text-sm mb-6">
@@ -101,10 +96,12 @@ const Prompt = () => {
                 Generate outputs
               </button>
             </div>
-          </>
+          </div>
         )
       ) : (
-        <ConfigEditor />
+        <div className="flex-1 min-h-0 overflow-hidden pb-6">
+          <ConfigEditor className="h-full" />
+        </div>
       )}
     </div>
   )
