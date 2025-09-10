@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
 import PageActions from '../common/PageActions'
+import ConfigEditor from '../ConfigEditor'
 import { Mode } from '../ModeToggle'
 import FontIcon from '../../common/FontIcon'
 import Loader from '../../common/Loader'
@@ -930,34 +931,49 @@ const Models = () => {
   return (
     <div className="h-full w-full flex flex-col gap-3 pb-32">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl">Models</h2>
+        <h2 className="text-2xl">
+          {mode === 'designer' ? 'Models' : 'Config editor'}
+        </h2>
         <PageActions mode={mode} onModeChange={setMode} />
       </div>
 
-      <TabBar
-        activeTab={activeTab}
-        onChange={setActiveTab}
-        tabs={[
-          { id: 'project', label: 'Project inference models' },
-          { id: 'manage', label: 'Add or change models' },
-          { id: 'training', label: 'Training data' },
-        ]}
-      />
+      {mode !== 'designer' ? (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm text-muted-foreground mb-1">Edit config</div>
+          <div className="rounded-md overflow-hidden">
+            <div className="h-[70vh]">
+              <ConfigEditor />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <TabBar
+            activeTab={activeTab}
+            onChange={setActiveTab}
+            tabs={[
+              { id: 'project', label: 'Project inference models' },
+              { id: 'manage', label: 'Add or change models' },
+              { id: 'training', label: 'Training data' },
+            ]}
+          />
 
-      {activeTab === 'project' && (
-        <ProjectInferenceModels
-          models={projectModels}
-          onMakeDefault={makeDefault}
-          onDelete={deleteModel}
-        />
+          {activeTab === 'project' && (
+            <ProjectInferenceModels
+              models={projectModels}
+              onMakeDefault={makeDefault}
+              onDelete={deleteModel}
+            />
+          )}
+          {activeTab === 'manage' && (
+            <AddOrChangeModels
+              onAddModel={addProjectModel}
+              onGoToProject={() => setActiveTab('project')}
+            />
+          )}
+          {activeTab === 'training' && <TrainingData />}
+        </>
       )}
-      {activeTab === 'manage' && (
-        <AddOrChangeModels
-          onAddModel={addProjectModel}
-          onGoToProject={() => setActiveTab('project')}
-        />
-      )}
-      {activeTab === 'training' && <TrainingData />}
     </div>
   )
 }
