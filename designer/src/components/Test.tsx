@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import FontIcon from '../common/FontIcon'
 import ModeToggle, { Mode } from './ModeToggle'
 import { Button } from './ui/button'
+import { Checkbox } from './ui/checkbox'
+import { Switch } from './ui/switch'
 import ConfigEditor from './ConfigEditor/ConfigEditor'
 import { usePackageModal } from '../contexts/PackageModalContext'
 
@@ -17,7 +19,7 @@ interface TestCase {
 }
 
 const scorePillClasses = (score: number) => {
-  if (score >= 95) return 'bg-green-200 text-black'
+  if (score >= 95) return 'bg-teal-300 text-black'
   if (score >= 75) return 'bg-primary text-primary-foreground'
   return 'bg-amber-300 text-black'
 }
@@ -79,12 +81,7 @@ const Test = () => {
     },
   ])
 
-  const [isNewOpen, setIsNewOpen] = useState<boolean>(false)
-  const [form, setForm] = useState<{
-    name: string
-    input: string
-    expected: string
-  }>({ name: '', input: '', expected: '' })
+  // New tests are created via a button and edited in the existing modal
 
   const [isEditOpen, setIsEditOpen] = useState<boolean>(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -98,15 +95,17 @@ const Test = () => {
     expected: '',
   })
 
-  const envOptions = useMemo(
-    () => ['Local', 'Production', 'Staging'] as const,
-    []
-  )
+  // Create modal state
+  const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false)
+  const [createForm, setCreateForm] = useState<{
+    name: string
+    input: string
+    expected: string
+  }>({ name: '', input: '', expected: '' })
 
-  const isFormValid =
-    form.name.trim().length > 0 &&
-    form.input.trim().length > 0 &&
-    form.expected.trim().length > 0
+  // Environment controls removed from the panel UI
+
+  // No inline form; validation handled in edit modal
 
   const nextId = useMemo(
     () => tests.reduce((max, t) => (t.id > max ? t.id : max), 0) + 1,
@@ -134,27 +133,33 @@ const Test = () => {
     )
   }
 
-  const handleEnvChange = (id: number, env: TestCase['environment']) => {
-    setTests(prev =>
-      prev.map(t => (t.id === id ? { ...t, environment: env } : t))
-    )
+  // Environment no longer selectable in the panel
+
+  const openCreateModal = () => {
+    setCreateForm({ name: '', input: '', expected: '' })
+    setIsCreateOpen(true)
   }
 
-  const handleAddTest = () => {
-    if (!isFormValid) return
+  const saveCreate = (runAfterSave: boolean) => {
     const newRow: TestCase = {
       id: nextId,
-      name: form.name.trim(),
+      name: createForm.name.trim() || 'New test',
       source: 'Custom',
       score: 0,
       environment: 'Local',
       lastRun: '-',
-      input: form.input.trim(),
-      expected: form.expected.trim(),
+      input: createForm.input.trim(),
+      expected: createForm.expected.trim(),
     }
     setTests(prev => [newRow, ...prev])
-    setForm({ name: '', input: '', expected: '' })
-    setIsNewOpen(false)
+    setIsCreateOpen(false)
+    if (runAfterSave) {
+      handleRun(newRow.id)
+    }
+  }
+
+  const deleteTest = (id: number) => {
+    setTests(prev => prev.filter(t => t.id !== id))
   }
 
   const openEdit = (id: number) => {
@@ -190,13 +195,19 @@ const Test = () => {
   }
 
   const [mode, setMode] = useState<Mode>('designer')
+  const [isPanelOpen, setIsPanelOpen] = useState<boolean>(true)
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <h2 className="text-2xl ">
-          {mode === 'designer' ? 'Test' : 'Config editor'}
-        </h2>
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+        <div>
+          <h2 className="text-2xl ">
+            {mode === 'designer' ? 'Test' : 'Config editor'}
+          </h2>
+          <div className="text-sm text-muted-foreground mt-1">
+            Chat with your model to test and evaluate responses
+          </div>
+        </div>
         <div className="flex items-center gap-3">
           <ModeToggle mode={mode} onToggle={setMode} />
           <Button variant="outline" size="sm" onClick={openPackageModal}>
@@ -205,150 +216,116 @@ const Test = () => {
         </div>
       </div>
 
-      {/* New test case accordion */}
-      {mode !== 'designer' ? (
-        <div className="flex-1 min-h-0 overflow-hidden pb-6">
-          <ConfigEditor className="h-full" />
+      {/* Settings bar */}
+      <div className="mb-4 flex items-start gap-4">
+        <div className="flex-1 rounded-xl bg-muted/30 border border-border h-11 px-4 flex items-center justify-between">
+          <label className="inline-flex items-center gap-3 text-sm">
+            <Checkbox id="show-processed" defaultChecked />
+            <span>Show referenced chunks</span>
+          </label>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted-foreground">Allow ranking</span>
+            <Switch defaultChecked aria-label="Allow ranking" />
+            <span className="text-muted-foreground">On</span>
+          </div>
         </div>
-      ) : (
-        <div className="flex-1 min-h-0 flex flex-col gap-4 pb-6 overflow-auto">
-          <div className="w-full rounded-xl bg-card p-4 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                className="flex items-center gap-2 text-left"
-                onClick={() => setIsNewOpen(v => !v)}
-              >
-                <span className="text-sm">New test case</span>
-                <FontIcon
-                  type="chevron-down"
-                  className={`w-4 h-4 text-foreground transition-transform ${isNewOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-              <button
-                type="button"
-                disabled={!isFormValid}
-                onClick={handleAddTest}
-                className={`text-sm px-3 py-2 rounded-lg ${isFormValid ? 'bg-primary text-primary-foreground hover:opacity-90' : 'opacity-50 cursor-not-allowed border border-input text-muted-foreground'}`}
-              >
-                Add test case
-              </button>
-            </div>
+        <div className="w-[360px]">
+          {isPanelOpen ? (
+            <button
+              type="button"
+              onClick={() => setIsPanelOpen(false)}
+              aria-label="Collapse tests panel"
+              className="rounded-t-xl bg-card border border-border border-b-0 h-11 px-4 w-full flex items-center justify-between text-left cursor-pointer hover:bg-accent/40 transition-colors"
+            >
+              <span className="text-base">Tests</span>
+              <FontIcon type="close" className="w-4 h-4" />
+            </button>
+          ) : (
+            <Button
+              variant="outline"
+              className="rounded-xl h-11 w-full text-base justify-between pl-4 pr-3"
+              onClick={() => setIsPanelOpen(true)}
+              aria-label="Expand tests panel"
+            >
+              <span>Tests</span>
+              <FontIcon type="chevron-down" className="w-4 h-4 ml-2" />
+            </Button>
+          )}
+        </div>
+      </div>
 
-          {isNewOpen && (
-            <div className="mt-3 flex flex-col gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Test name
-                </label>
-                <input
-                  type="text"
-                  placeholder="Test name here"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Input</label>
-                <textarea
-                  rows={3}
-                  placeholder="Enter the input prompt to test"
-                  value={form.input}
-                  onChange={e => setForm({ ...form, input: e.target.value })}
-                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground code-like"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-blue-100">
-                  Expected output (baseline)
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Enter the input prompt to test"
-                  value={form.expected}
-                  onChange={e => setForm({ ...form, expected: e.target.value })}
-                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground code-like"
-                />
+      <div className="flex-1 min-h-0 flex relative">
+        {/* Main work area */}
+        <div className="flex-1 min-h-0 pb-6 pr-4">
+          {mode !== 'designer' ? (
+            <div className="h-full overflow-hidden">
+              <ConfigEditor className="h-full" />
+            </div>
+          ) : (
+            <div className="h-full">
+              <div className="h-full w-full rounded-xl border border-dashed border-border/60 text-muted-foreground flex items-center justify-center">
+                <div className="text-sm">Your workspace goes here</div>
               </div>
             </div>
           )}
-          </div>
-
-          {/* Table of tests */}
-          <div className="w-full rounded-md overflow-hidden border border-border flex-shrink-0">
-          <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left px-4 py-2">Test name</th>
-                <th className="text-left px-4 py-2">Match score</th>
-                <th className="text-left px-4 py-2">Environment</th>
-                <th className="text-left px-4 py-2">Last run</th>
-                <th className="text-left px-4 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tests.map(test => (
-                <tr key={test.id} className="bg-card border-t border-border">
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-sm">{test.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {test.source}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <span
-                      className={`px-2 py-0.5 rounded-2xl text-xs ${scorePillClasses(test.score)}`}
-                    >
-                      {test.score}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <select
-                      className="w-[160px] bg-transparent rounded-md px-3 py-1 border border-input text-foreground"
-                      value={test.environment}
-                      onChange={e =>
-                        handleEnvChange(
-                          test.id,
-                          e.target.value as TestCase['environment']
-                        )
-                      }
-                    >
-                      {envOptions.map(opt => (
-                        <option
-                          key={opt}
-                          value={opt}
-                          className="text-foreground"
-                        >
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 align-top">{test.lastRun}</td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="px-3 py-1 rounded-md border text-xs border-emerald-300 text-emerald-300 hover:bg-emerald-300 hover:text-black transition-colors"
-                        onClick={() => handleRun(test.id)}
-                      >
-                        Run
-                      </button>
-                      <FontIcon
-                        type="edit"
-                        isButton
-                        handleOnClick={() => openEdit(test.id)}
-                        className="w-5 h-5 text-primary"
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
         </div>
-      )}
+        {isPanelOpen && (
+          <aside className="absolute -top-4 right-0 w-[360px] max-h-full rounded-b-xl bg-card border border-border border-t-0 p-4 shadow-xl z-50">
+            <div className="w-full">
+              <Button variant="outline" onClick={openCreateModal}>
+                <span className="mr-2">New test</span>
+                <FontIcon type="add" className="w-4 h-4" />
+              </Button>
+              <div className="mt-4 h-px w-full bg-border" />
+            </div>
+            <div className="w-full rounded-md overflow-hidden border border-border mt-4">
+              <div className="max-h-[60vh] overflow-auto">
+                <div className="flex flex-col divide-y divide-border">
+                  {tests.map(test => (
+                    <div
+                      key={test.id}
+                      className="px-4 py-4 bg-card/60 hover:bg-accent/40 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm truncate">{test.name}</div>
+                            <FontIcon
+                              type="edit"
+                              isButton
+                              handleOnClick={() => openEdit(test.id)}
+                              className="w-4 h-4 text-primary"
+                            />
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Last run {test.lastRun}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRun(test.id)}
+                          >
+                            Run
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-2xl text-xs ${scorePillClasses(test.score)}`}
+                        >
+                          {test.score}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
 
       {isEditOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70">
@@ -413,18 +390,92 @@ const Test = () => {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
-                  onClick={() => saveEdit(true)}
-                >
-                  Save and run
-                </button>
-                <button
-                  className="px-3 py-2 rounded-md bg-secondary text-secondary-foreground border border-input hover:bg-secondary/80 text-sm"
-                  onClick={() => saveEdit(false)}
-                >
+                {editId != null && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      deleteTest(editId)
+                      setIsEditOpen(false)
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={() => saveEdit(false)}>
                   Save changes
-                </button>
+                </Button>
+                <Button onClick={() => saveEdit(true)}>Save and run</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70">
+          <div className="w-[860px] max-w-[95vw] rounded-xl overflow-hidden bg-card text-foreground shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="text-sm">New test</div>
+              <FontIcon
+                type="close"
+                isButton
+                handleOnClick={() => setIsCreateOpen(false)}
+                className="w-5 h-5 text-foreground"
+              />
+            </div>
+
+            <div className="p-5 flex flex-col gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  Test name
+                </label>
+                <input
+                  type="text"
+                  placeholder="Test name here"
+                  value={createForm.name}
+                  onChange={e =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
+                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Input</label>
+                <textarea
+                  rows={3}
+                  placeholder="Enter the input prompt to test"
+                  value={createForm.input}
+                  onChange={e =>
+                    setCreateForm({ ...createForm, input: e.target.value })
+                  }
+                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground code-like"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  Expected output (baseline)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Add expected baseline output"
+                  value={createForm.expected}
+                  onChange={e =>
+                    setCreateForm({ ...createForm, expected: e.target.value })
+                  }
+                  className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground code-like"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 flex items-center justify-end bg-muted">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsCreateOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={() => saveCreate(true)}>Save and run</Button>
               </div>
             </div>
           </div>
