@@ -1,9 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Chatbox from './components/Chatbox/Chatbox'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 
 function Chat() {
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(true)
+  const location = useLocation()
+
+  // Close the designer chat panel when viewing the Test page
+  useEffect(() => {
+    if (location.pathname.startsWith('/chat/test')) {
+      setIsPanelOpen(false)
+    }
+  }, [location.pathname])
 
   return (
     <div className="w-full h-full flex transition-colors bg-gray-200 dark:bg-blue-800 pt-12">

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import FontIcon from '../common/FontIcon'
 import ModeToggle, { Mode } from './ModeToggle'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Switch } from './ui/switch'
 import ConfigEditor from './ConfigEditor/ConfigEditor'
+import TestChat from './TestChat/TestChat'
 import { usePackageModal } from '../contexts/PackageModalContext'
 
 interface TestCase {
@@ -195,7 +196,36 @@ const Test = () => {
   }
 
   const [mode, setMode] = useState<Mode>('designer')
-  const [isPanelOpen, setIsPanelOpen] = useState<boolean>(true)
+  const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false)
+  const [showReferences, setShowReferences] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem('lf_test_showReferences')
+    return v == null ? true : v === 'true'
+  })
+  const [allowRanking, setAllowRanking] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem('lf_test_allowRanking')
+    return v == null ? true : v === 'true'
+  })
+  const [useTestData, setUseTestData] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const v = localStorage.getItem('lf_test_useTestData')
+    return v == null ? false : v === 'true'
+  })
+
+  // Persist preferences
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_showReferences', String(showReferences))
+  }, [showReferences])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_allowRanking', String(allowRanking))
+  }, [allowRanking])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_useTestData', String(useTestData))
+  }, [useTestData])
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -220,13 +250,33 @@ const Test = () => {
       <div className="mb-4 flex items-start gap-4">
         <div className="flex-1 rounded-xl bg-muted/30 border border-border h-11 px-4 flex items-center justify-between">
           <label className="inline-flex items-center gap-3 text-sm">
-            <Checkbox id="show-processed" defaultChecked />
+            <Checkbox
+              id="show-processed"
+              checked={showReferences}
+              onCheckedChange={v => setShowReferences(Boolean(v))}
+            />
             <span>Show referenced chunks</span>
           </label>
           <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted-foreground">Use test data</span>
+            <Switch
+              checked={useTestData}
+              onCheckedChange={v => setUseTestData(Boolean(v))}
+              aria-label="Use test data"
+            />
+            <span className="text-muted-foreground">
+              {useTestData ? 'On' : 'Off'}
+            </span>
+            <span className="mx-2 h-5 w-px bg-border" />
             <span className="text-muted-foreground">Allow ranking</span>
-            <Switch defaultChecked aria-label="Allow ranking" />
-            <span className="text-muted-foreground">On</span>
+            <Switch
+              checked={allowRanking}
+              onCheckedChange={v => setAllowRanking(Boolean(v))}
+              aria-label="Allow ranking"
+            />
+            <span className="text-muted-foreground">
+              {allowRanking ? 'On' : 'Off'}
+            </span>
           </div>
         </div>
         <div className="w-[360px]">
@@ -256,16 +306,18 @@ const Test = () => {
 
       <div className="flex-1 min-h-0 flex relative">
         {/* Main work area */}
-        <div className="flex-1 min-h-0 pb-6 pr-4">
+        <div className="flex-1 min-h-0 pb-6 pr-0">
           {mode !== 'designer' ? (
             <div className="h-full overflow-hidden">
               <ConfigEditor className="h-full" />
             </div>
           ) : (
             <div className="h-full">
-              <div className="h-full w-full rounded-xl border border-dashed border-border/60 text-muted-foreground flex items-center justify-center">
-                <div className="text-sm">Your workspace goes here</div>
-              </div>
+              <TestChat
+                showReferences={showReferences}
+                allowRanking={allowRanking}
+                useTestData={useTestData}
+              />
             </div>
           )}
         </div>
