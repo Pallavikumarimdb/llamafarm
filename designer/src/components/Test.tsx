@@ -7,6 +7,7 @@ import { Switch } from './ui/switch'
 import ConfigEditor from './ConfigEditor/ConfigEditor'
 import TestChat from './TestChat/TestChat'
 import { usePackageModal } from '../contexts/PackageModalContext'
+import { Input } from './ui/input'
 
 interface TestCase {
   id: number
@@ -138,7 +139,7 @@ const Test = () => {
       setRunning(prev => ({ ...prev, [id]: false }))
     }, 800)
 
-    // Collapse the panel so the user can see the chat
+    // Collapse panels appropriately
     setIsPanelOpen(false)
 
     // Update list metadata immediately
@@ -235,6 +236,7 @@ const Test = () => {
 
   const [mode, setMode] = useState<Mode>('designer')
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
   const [showReferences, setShowReferences] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true
     const v = localStorage.getItem('lf_test_showReferences')
@@ -265,12 +267,38 @@ const Test = () => {
     const v = localStorage.getItem('lf_test_useTestData')
     return v == null ? false : v === 'true'
   })
+  const [gen, setGen] = useState<{
+    temperature: number
+    topP: number
+    maxTokens: number
+    presencePenalty: number
+    frequencyPenalty: number
+    seed?: number | ''
+    streaming: boolean
+    jsonMode: boolean
+  }>(() => {
+    try {
+      const raw = localStorage.getItem('lf_gen_defaults')
+      if (raw) return JSON.parse(raw)
+    } catch {}
+    return {
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 512,
+      presencePenalty: 0,
+      frequencyPenalty: 0,
+      seed: '',
+      streaming: true,
+      jsonMode: false,
+    }
+  })
 
   // Persist preferences
   useEffect(() => {
     if (typeof window === 'undefined') return
     localStorage.setItem('lf_test_showReferences', String(showReferences))
   }, [showReferences])
+  // Persist showGenSettings (now controlled in the Generation settings drawer)
   useEffect(() => {
     if (typeof window === 'undefined') return
     localStorage.setItem('lf_test_showGenSettings', String(showGenSettings))
@@ -291,6 +319,11 @@ const Test = () => {
     if (typeof window === 'undefined') return
     localStorage.setItem('lf_test_useTestData', String(useTestData))
   }, [useTestData])
+  useEffect(() => {
+    try {
+      localStorage.setItem('lf_gen_defaults', JSON.stringify(gen))
+    } catch {}
+  }, [gen])
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -304,17 +337,6 @@ const Test = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm mr-1">
-            <span className="text-muted-foreground">Use test data</span>
-            <Switch
-              checked={useTestData}
-              onCheckedChange={v => setUseTestData(Boolean(v))}
-              aria-label="Use test data"
-            />
-            <span className="text-muted-foreground">
-              {useTestData ? 'On' : 'Off'}
-            </span>
-          </div>
           <ModeToggle mode={mode} onToggle={setMode} />
           <Button variant="outline" size="sm" onClick={openPackageModal}>
             Package
@@ -323,16 +345,17 @@ const Test = () => {
       </div>
 
       {/* Settings bar */}
-      <div className="mb-4 flex items-start gap-4">
+      <div className="mb-4 flex items-start gap-3">
         <div className="flex-1 rounded-xl bg-muted/30 border border-border h-11 px-4 flex items-center justify-between">
-          <div className="flex items-center gap-6 text-sm">
+          {/* Left: display toggles */}
+          <div className="flex items-center gap-3 text-xs">
             <label className="inline-flex items-center gap-2">
               <Checkbox
                 id="show-processed"
                 checked={showReferences}
                 onCheckedChange={v => setShowReferences(Boolean(v))}
               />
-              <span>Show referenced chunks</span>
+              <span className="whitespace-nowrap">Show referenced chunks</span>
             </label>
             <label className="inline-flex items-center gap-2">
               <Checkbox
@@ -340,7 +363,7 @@ const Test = () => {
                 checked={showPrompts}
                 onCheckedChange={v => setShowPrompts(Boolean(v))}
               />
-              <span>Show prompts sent</span>
+              <span className="whitespace-nowrap">Show prompts sent</span>
             </label>
             <label className="inline-flex items-center gap-2">
               <Checkbox
@@ -348,51 +371,285 @@ const Test = () => {
                 checked={showThinking}
                 onCheckedChange={v => setShowThinking(Boolean(v))}
               />
-              <span>Show thinking steps</span>
+              <span className="whitespace-nowrap">Show thinking steps</span>
             </label>
-            <label className="inline-flex items-center gap-2">
-              <Checkbox
-                id="show-gen-settings"
-                checked={showGenSettings}
-                onCheckedChange={v => setShowGenSettings(Boolean(v))}
-              />
-              <span>Show generation settings</span>
-            </label>
+            {/* Show generation settings toggle moved into the drawer */}
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-muted-foreground">Allow ranking</span>
+          {/* Right: allow ranking aligned to card edge */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground whitespace-nowrap">
+              Allow ranking
+            </span>
             <Switch
               checked={allowRanking}
               onCheckedChange={v => setAllowRanking(Boolean(v))}
               aria-label="Allow ranking"
             />
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground whitespace-nowrap">
               {allowRanking ? 'On' : 'Off'}
             </span>
           </div>
         </div>
-        <div className="w-[360px]">
-          {isPanelOpen ? (
-            <button
-              type="button"
-              onClick={() => setIsPanelOpen(false)}
-              aria-label="Collapse tests panel"
-              className="rounded-t-xl bg-card border border-border border-b-0 h-11 px-4 w-full flex items-center justify-between text-left cursor-pointer hover:bg-accent/40 transition-colors"
-            >
-              <span className="text-base">Tests</span>
-              <FontIcon type="close" className="w-4 h-4" />
-            </button>
-          ) : (
-            <Button
-              variant="outline"
-              className="rounded-xl h-11 w-full text-base justify-between pl-4 pr-3"
-              onClick={() => setIsPanelOpen(true)}
-              aria-label="Expand tests panel"
-            >
-              <span>Tests</span>
-              <FontIcon type="chevron-down" className="w-4 h-4 ml-2" />
-            </Button>
-          )}
+        <div className="w-[640px] flex gap-2">
+          <div className="flex-1 relative">
+            {isPanelOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsPanelOpen(false)}
+                aria-label="Collapse tests panel"
+                className="rounded-t-xl bg-card border border-border border-b-0 h-11 px-4 w-full flex items-center justify-between text-left cursor-pointer hover:bg-accent/40 transition-colors"
+              >
+                <span className="text-base">Tests</span>
+                <FontIcon type="close" className="w-4 h-4" />
+              </button>
+            ) : (
+              <Button
+                variant="outline"
+                className="rounded-xl h-11 w-full text-base justify-between pl-4 pr-3"
+                onClick={() => {
+                  setIsPanelOpen(true)
+                  setIsSettingsOpen(false)
+                }}
+                aria-label="Expand tests panel"
+              >
+                <span>Tests</span>
+                <FontIcon type="chevron-down" className="w-4 h-4 ml-2" />
+              </Button>
+            )}
+            {isPanelOpen && (
+              <div className="absolute left-0 right-0 top-full w-full rounded-b-xl bg-card border border-border border-t-0 p-4 shadow-xl z-50">
+                <div className="w-full">
+                  <Button variant="outline" onClick={openCreateModal}>
+                    <span className="mr-2">New test</span>
+                    <FontIcon type="add" className="w-4 h-4" />
+                  </Button>
+                  <div className="mt-4 h-px w-full bg-border" />
+                </div>
+                <div className="w-full rounded-md overflow-hidden border border-border mt-4">
+                  <div className="max-h-[60vh] overflow-auto">
+                    <div className="flex flex-col divide-y divide-border">
+                      {tests.map(test => (
+                        <div
+                          key={test.id}
+                          className="px-4 py-4 bg-card/60 hover:bg-accent/40 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm truncate">
+                                  {test.name}
+                                </div>
+                                <FontIcon
+                                  type="edit"
+                                  isButton
+                                  handleOnClick={() => openEdit(test.id)}
+                                  className="w-4 h-4 text-primary"
+                                />
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Last run {test.lastRun}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRun(test.id)}
+                                disabled={Boolean(running[test.id])}
+                              >
+                                {running[test.id] ? 'Running…' : 'Run'}
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-2xl text-xs ${scorePillClasses(test.score)}`}
+                            >
+                              {test.score}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex-1 relative">
+            {isSettingsOpen ? (
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                aria-label="Collapse generation settings panel"
+                className="rounded-t-xl bg-card border border-border border-b-0 h-11 px-4 w-full flex items-center justify-between text-left cursor-pointer hover:bg-accent/40 transition-colors"
+              >
+                <span className="text-base">Generation settings</span>
+                <FontIcon type="close" className="w-4 h-4" />
+              </button>
+            ) : (
+              <Button
+                variant="outline"
+                className="rounded-xl h-11 w-full text-base justify-between pl-4 pr-3"
+                onClick={() => {
+                  setIsSettingsOpen(true)
+                  setIsPanelOpen(false)
+                }}
+                aria-label="Expand generation settings panel"
+              >
+                <span>Generation settings</span>
+                <FontIcon type="chevron-down" className="w-4 h-4 ml-2" />
+              </Button>
+            )}
+            {isSettingsOpen && (
+              <div className="absolute left-0 right-0 top-full w-full rounded-b-xl bg-card border border-border border-t-0 p-4 shadow-xl z-50">
+                <div className="w-full">
+                  <div className="h-px w-full bg-border" />
+                </div>
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Use test data</span>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={useTestData}
+                        onCheckedChange={v => setUseTestData(Boolean(v))}
+                        aria-label="Use test data"
+                      />
+                      <span className="text-muted-foreground">
+                        {useTestData ? 'On' : 'Off'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-px w-full bg-border" />
+                  <label className="inline-flex items-center gap-2">
+                    <Checkbox
+                      checked={showGenSettings}
+                      onCheckedChange={v => setShowGenSettings(Boolean(v))}
+                    />
+                    <span className="whitespace-nowrap">
+                      Show generation settings in responses
+                    </span>
+                  </label>
+                  <div className="h-px w-full bg-border" />
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">Temperature</span>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      value={gen.temperature}
+                      onChange={e =>
+                        setGen({ ...gen, temperature: Number(e.target.value) })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">Top‑p</span>
+                    <Input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="1"
+                      value={gen.topP}
+                      onChange={e =>
+                        setGen({ ...gen, topP: Number(e.target.value) })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">Max tokens</span>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={gen.maxTokens}
+                      onChange={e =>
+                        setGen({ ...gen, maxTokens: Number(e.target.value) })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">
+                      Presence penalty
+                    </span>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="-2"
+                      max="2"
+                      value={gen.presencePenalty}
+                      onChange={e =>
+                        setGen({
+                          ...gen,
+                          presencePenalty: Number(e.target.value),
+                        })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">
+                      Frequency penalty
+                    </span>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="-2"
+                      max="2"
+                      value={gen.frequencyPenalty}
+                      onChange={e =>
+                        setGen({
+                          ...gen,
+                          frequencyPenalty: Number(e.target.value),
+                        })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <span className="text-muted-foreground">Seed</span>
+                    <Input
+                      type="number"
+                      step="1"
+                      value={gen.seed as any}
+                      onChange={e =>
+                        setGen({
+                          ...gen,
+                          seed:
+                            e.target.value === '' ? '' : Number(e.target.value),
+                        })
+                      }
+                      className="col-span-2"
+                    />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <label className="inline-flex items-center gap-2">
+                      <Checkbox
+                        checked={gen.streaming}
+                        onCheckedChange={v =>
+                          setGen({ ...gen, streaming: Boolean(v) })
+                        }
+                      />
+                      <span>Streaming</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <Checkbox
+                        checked={gen.jsonMode}
+                        onCheckedChange={v =>
+                          setGen({ ...gen, jsonMode: Boolean(v) })
+                        }
+                      />
+                      <span>JSON mode</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -418,63 +675,6 @@ const Test = () => {
             </div>
           )}
         </div>
-        {isPanelOpen && (
-          <aside className="absolute -top-4 right-0 w-[360px] max-h-full rounded-b-xl bg-card border border-border border-t-0 p-4 shadow-xl z-50">
-            <div className="w-full">
-              <Button variant="outline" onClick={openCreateModal}>
-                <span className="mr-2">New test</span>
-                <FontIcon type="add" className="w-4 h-4" />
-              </Button>
-              <div className="mt-4 h-px w-full bg-border" />
-            </div>
-            <div className="w-full rounded-md overflow-hidden border border-border mt-4">
-              <div className="max-h-[60vh] overflow-auto">
-                <div className="flex flex-col divide-y divide-border">
-                  {tests.map(test => (
-                    <div
-                      key={test.id}
-                      className="px-4 py-4 bg-card/60 hover:bg-accent/40 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm truncate">{test.name}</div>
-                            <FontIcon
-                              type="edit"
-                              isButton
-                              handleOnClick={() => openEdit(test.id)}
-                              className="w-4 h-4 text-primary"
-                            />
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Last run {test.lastRun}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRun(test.id)}
-                            disabled={Boolean(running[test.id])}
-                          >
-                            {running[test.id] ? 'Running…' : 'Run'}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex items-center">
-                        <span
-                          className={`px-2 py-0.5 rounded-2xl text-xs ${scorePillClasses(test.score)}`}
-                        >
-                          {test.score}%
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
       </div>
 
       {isEditOpen && (
