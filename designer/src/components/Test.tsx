@@ -240,6 +240,21 @@ const Test = () => {
     const v = localStorage.getItem('lf_test_showReferences')
     return v == null ? true : v === 'true'
   })
+  const [showGenSettings, setShowGenSettings] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const v = localStorage.getItem('lf_test_showGenSettings')
+    return v == null ? false : v === 'true'
+  })
+  const [showPrompts, setShowPrompts] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const v = localStorage.getItem('lf_test_showPrompts')
+    return v == null ? false : v === 'true'
+  })
+  const [showThinking, setShowThinking] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const v = localStorage.getItem('lf_test_showThinking')
+    return v == null ? false : v === 'true'
+  })
   const [allowRanking, setAllowRanking] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true
     const v = localStorage.getItem('lf_test_allowRanking')
@@ -256,6 +271,18 @@ const Test = () => {
     if (typeof window === 'undefined') return
     localStorage.setItem('lf_test_showReferences', String(showReferences))
   }, [showReferences])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_showGenSettings', String(showGenSettings))
+  }, [showGenSettings])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_showPrompts', String(showPrompts))
+  }, [showPrompts])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('lf_test_showThinking', String(showThinking))
+  }, [showThinking])
   useEffect(() => {
     if (typeof window === 'undefined') return
     localStorage.setItem('lf_test_allowRanking', String(allowRanking))
@@ -277,6 +304,17 @@ const Test = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm mr-1">
+            <span className="text-muted-foreground">Use test data</span>
+            <Switch
+              checked={useTestData}
+              onCheckedChange={v => setUseTestData(Boolean(v))}
+              aria-label="Use test data"
+            />
+            <span className="text-muted-foreground">
+              {useTestData ? 'On' : 'Off'}
+            </span>
+          </div>
           <ModeToggle mode={mode} onToggle={setMode} />
           <Button variant="outline" size="sm" onClick={openPackageModal}>
             Package
@@ -287,25 +325,41 @@ const Test = () => {
       {/* Settings bar */}
       <div className="mb-4 flex items-start gap-4">
         <div className="flex-1 rounded-xl bg-muted/30 border border-border h-11 px-4 flex items-center justify-between">
-          <label className="inline-flex items-center gap-3 text-sm">
-            <Checkbox
-              id="show-processed"
-              checked={showReferences}
-              onCheckedChange={v => setShowReferences(Boolean(v))}
-            />
-            <span>Show referenced chunks</span>
-          </label>
+          <div className="flex items-center gap-6 text-sm">
+            <label className="inline-flex items-center gap-2">
+              <Checkbox
+                id="show-processed"
+                checked={showReferences}
+                onCheckedChange={v => setShowReferences(Boolean(v))}
+              />
+              <span>Show referenced chunks</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <Checkbox
+                id="show-prompts"
+                checked={showPrompts}
+                onCheckedChange={v => setShowPrompts(Boolean(v))}
+              />
+              <span>Show prompts sent</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <Checkbox
+                id="show-thinking"
+                checked={showThinking}
+                onCheckedChange={v => setShowThinking(Boolean(v))}
+              />
+              <span>Show thinking steps</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <Checkbox
+                id="show-gen-settings"
+                checked={showGenSettings}
+                onCheckedChange={v => setShowGenSettings(Boolean(v))}
+              />
+              <span>Show generation settings</span>
+            </label>
+          </div>
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-muted-foreground">Use test data</span>
-            <Switch
-              checked={useTestData}
-              onCheckedChange={v => setUseTestData(Boolean(v))}
-              aria-label="Use test data"
-            />
-            <span className="text-muted-foreground">
-              {useTestData ? 'On' : 'Off'}
-            </span>
-            <span className="mx-2 h-5 w-px bg-border" />
             <span className="text-muted-foreground">Allow ranking</span>
             <Switch
               checked={allowRanking}
@@ -352,9 +406,14 @@ const Test = () => {
           ) : (
             <div className="h-full">
               <TestChat
-                showReferences={showReferences}
-                allowRanking={allowRanking}
-                useTestData={useTestData}
+                {...({
+                  showReferences,
+                  allowRanking,
+                  useTestData,
+                  showPrompts,
+                  showThinking,
+                  showGenSettings,
+                } as any)}
               />
             </div>
           )}

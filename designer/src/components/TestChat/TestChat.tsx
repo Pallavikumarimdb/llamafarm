@@ -8,6 +8,9 @@ export interface TestChatProps {
   showReferences: boolean
   allowRanking: boolean
   useTestData?: boolean
+  showPrompts?: boolean
+  showThinking?: boolean
+  showGenSettings?: boolean
 }
 
 const containerClasses =
@@ -32,6 +35,9 @@ export default function TestChat({
   showReferences,
   allowRanking,
   useTestData,
+  showPrompts,
+  showThinking,
+  showGenSettings,
 }: TestChatProps) {
   const {
     messages,
@@ -54,6 +60,7 @@ export default function TestChat({
   const listRef = useRef<HTMLDivElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const lastUserInputRef = useRef<string>('')
 
   // Auto-grow textarea up to a comfortable max height before scrolling
   const resizeTextarea = useCallback(() => {
@@ -85,6 +92,7 @@ export default function TestChat({
     if (MOCK_MODE) {
       // Local-only optimistic flow without backend
       addMessage({ type: 'user', content, timestamp: new Date() })
+      lastUserInputRef.current = content
       const assistantId = addMessage({
         type: 'assistant',
         content: 'Thinking…',
@@ -94,6 +102,16 @@ export default function TestChat({
       updateInput('')
       setTimeout(() => {
         const mockAnswer = `Here is a mock response to: "${content}"\n\n- Point A\n- Point B\n\nThis is sample output while backend is disconnected.`
+        const mockPrompts = [
+          'System: You are an expert assistant. Answer clearly and concisely.',
+          'Instruction: Provide helpful, safe, and accurate output.',
+          `User input: ${content}`,
+        ]
+        const mockThinking = [
+          'Identified intent and key entities.',
+          'Searched internal knowledge for relevant facts.',
+          'Composed structured response with bullet points.',
+        ]
         updateMessage(assistantId, {
           content: mockAnswer,
           isLoading: false,
@@ -101,16 +119,34 @@ export default function TestChat({
             {
               source: 'dataset/manuals/aircraft_mx_guide.pdf',
               score: 0.83,
+              page: 12,
+              chunk: 4,
+              length: 182,
               content:
                 'Hydraulic pressure drops during taxi often indicate minor leaks or entrained air. Inspect lines and fittings.',
             },
             {
               source: 'dataset/bulletins/bulletin-2024-17.md',
               score: 0.71,
+              page: 3,
+              chunk: 2,
+              length: 126,
               content:
                 'Pressure sensor calibration drifts were reported in batch 24B. Verify calibration if readings fluctuate.',
             },
           ],
+          metadata: {
+            prompts: mockPrompts,
+            thinking: mockThinking,
+            generation: {
+              temperature: 0.7,
+              topP: 0.9,
+              maxTokens: 256,
+              presencePenalty: 0.0,
+              frequencyPenalty: 0.0,
+              seed: undefined,
+            },
+          },
         })
       }, 350)
       return
@@ -214,6 +250,7 @@ export default function TestChat({
           expected,
         },
       })
+      lastUserInputRef.current = input
 
       // Add loading assistant message
       const assistantId = addMessage({
@@ -231,6 +268,17 @@ export default function TestChat({
           expected ||
           `Here is an analysis based on the input. The likely causes are A/B/C with suggested next steps 1/2/3. This is a mocked response while the backend is not yet connected.`
         const result = evaluateTest(input, expected, mockAnswer)
+        const mockPrompts = [
+          'System: You are an expert assistant. Answer clearly and concisely.',
+          'Instruction: Provide likely causes and actionable next steps.',
+          `User input: ${input || '(empty)'}`,
+        ]
+        const mockThinking = [
+          'Parsed the problem and identified domain (hydraulics).',
+          'Searched knowledge base for common taxi pressure issues.',
+          'Cross-checked with maintenance bulletins and sensor failures.',
+          'Composed concise answer with steps.',
+        ]
         updateMessage(assistantId, {
           content: mockAnswer,
           isLoading: false,
@@ -239,6 +287,16 @@ export default function TestChat({
             testId: detail.id,
             testName: detail.name,
             testResult: { ...result, expected },
+            prompts: mockPrompts,
+            thinking: mockThinking,
+            generation: {
+              temperature: 0.6,
+              topP: 0.9,
+              maxTokens: 512,
+              presencePenalty: 0.0,
+              frequencyPenalty: 0.0,
+              seed: 42,
+            },
           },
         })
       }, latency)
@@ -282,6 +340,10 @@ export default function TestChat({
                 message={m}
                 showReferences={showReferences}
                 allowRanking={allowRanking}
+                showPrompts={showPrompts}
+                showThinking={showThinking}
+                lastUserInput={lastUserInputRef.current}
+                showGenSettings={showGenSettings}
               />
             ))
           )}
@@ -325,17 +387,27 @@ interface TestChatMessageProps {
   message: ChatboxMessage
   showReferences: boolean
   allowRanking: boolean
+  showPrompts?: boolean
+  showThinking?: boolean
+  lastUserInput?: string
+  showGenSettings?: boolean
 }
 
 function TestChatMessage({
   message,
   showReferences,
   allowRanking,
+  showPrompts,
+  showThinking,
+  lastUserInput,
+  showGenSettings,
 }: TestChatMessageProps) {
   const isUser = message.type === 'user'
   const isAssistant = message.type === 'assistant'
   const [thumb, setThumb] = useState<null | 'up' | 'down'>(null)
   const [showExpected, setShowExpected] = useState<boolean>(false)
+  const [openPrompts, setOpenPrompts] = useState<boolean>(true)
+  const [openThinking, setOpenThinking] = useState<boolean>(true)
 
   // Load persisted thumb for this message
   useEffect(() => {
@@ -434,6 +506,24 @@ function TestChatMessage({
         </div>
       )}
 
+      {/* Generation settings, compact */}
+      {isAssistant &&
+        showGenSettings &&
+        message.metadata &&
+        (() => {
+          const gen = (message.metadata as any)?.generation || null
+          if (!gen) return null
+          return (
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              T={gen?.temperature ?? '—'} • top‑p={gen?.topP ?? '—'} • max=
+              {gen?.maxTokens ?? '—'}
+              {typeof gen?.seed !== 'undefined' ? (
+                <> • seed={String(gen?.seed)}</>
+              ) : null}
+            </div>
+          )
+        })()}
+
       {/* References */}
       {showReferences &&
         isAssistant &&
@@ -485,6 +575,66 @@ function TestChatMessage({
           )}
         </div>
       )}
+
+      {/* Optional helper cards */}
+      {isAssistant &&
+        showPrompts &&
+        Array.isArray(message.metadata?.prompts) && (
+          <div className="mt-2 rounded-md border border-border bg-card/40">
+            <button
+              type="button"
+              onClick={() => setOpenPrompts(o => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs text-muted-foreground rounded-t-md hover:bg-accent/40"
+              aria-expanded={openPrompts}
+            >
+              <span className="font-medium">
+                Prompts sent ({message.metadata.prompts.length})
+              </span>
+              <span className="text-[11px]">
+                {openPrompts ? 'Hide' : 'Show'}
+              </span>
+            </button>
+            {openPrompts && (
+              <div className="divide-y divide-border">
+                {message.metadata.prompts.map((p: string, i: number) => (
+                  <div
+                    key={i}
+                    className="px-3 py-2 text-sm whitespace-pre-wrap"
+                  >
+                    {p}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      {isAssistant &&
+        showThinking &&
+        Array.isArray(message.metadata?.thinking) && (
+          <div className="mt-2 rounded-md border border-border bg-card/40">
+            <button
+              type="button"
+              onClick={() => setOpenThinking(o => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs text-muted-foreground rounded-t-md hover:bg-accent/40"
+              aria-expanded={openThinking}
+            >
+              <span className="font-medium">Thinking steps</span>
+              <span className="text-[11px]">
+                {openThinking ? 'Hide' : 'Show'}
+              </span>
+            </button>
+            {openThinking && (
+              <ol className="px-5 py-2 text-sm list-decimal marker:text-muted-foreground/70">
+                {message.metadata.thinking.map((step: string, i: number) => (
+                  <li key={i} className="py-1">
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
     </div>
   )
 }
