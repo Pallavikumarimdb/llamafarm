@@ -467,6 +467,32 @@ const Test = () => {
                             >
                               {test.score}%
                             </span>
+                            {test.score < 80 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="ml-3 h-7 px-2 py-0 text-teal-700 border-teal-500/50 hover:bg-teal-500/10 dark:text-teal-300"
+                                onClick={() => {
+                                  try {
+                                    window.dispatchEvent(
+                                      new CustomEvent('lf-diagnose', {
+                                        detail: {
+                                          source: 'low_score',
+                                          testId: test.id,
+                                          testName: test.name,
+                                          input: test.input ?? '',
+                                          expected: test.expected ?? '',
+                                          matchScore: test.score,
+                                        },
+                                      })
+                                    )
+                                  } catch {}
+                                  setIsPanelOpen(false)
+                                }}
+                              >
+                                Diagnose
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}

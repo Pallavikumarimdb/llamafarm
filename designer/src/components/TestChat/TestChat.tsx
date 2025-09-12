@@ -477,13 +477,36 @@ function TestChatMessage({
               <ThumbButton
                 kind="down"
                 active={thumb === 'down'}
-                onClick={() => onThumb('down')}
+                onClick={() => {
+                  const next = thumb === 'down' ? null : 'down'
+                  onThumb('down')
+                  // Show a subtle troubleshoot nudge when giving thumbs down
+                  if (next === 'down') {
+                    try {
+                      // Lightweight toast via alert-style for now: inline nudge button below
+                    } catch {}
+                  }
+                }}
               />
               <span className="mx-1 opacity-40">•</span>
             </>
           )}
           {/* Copy button removed */}
           <span className="opacity-40">•</span>
+          <ActionLink
+            label="Diagnose"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent('lf-diagnose', {
+                  detail: {
+                    source: 'message_action',
+                    responseText: message.content,
+                  },
+                })
+              )
+            }
+          />
+          <span className="opacity-40">/</span>
           <ActionLink
             label="Retry"
             onClick={() =>
@@ -557,6 +580,32 @@ function TestChatMessage({
               {showExpected ? 'Hide expected' : 'View expected'}
             </button>
           </div>
+          {typeof message.metadata.testResult.score === 'number' &&
+            message.metadata.testResult.score < 80 && (
+              <div className="mt-2 text-xs">
+                <button
+                  type="button"
+                  className="px-2 py-0.5 rounded border border-teal-500/50 text-teal-700 hover:bg-teal-500/10 dark:text-teal-300"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent('lf-diagnose', {
+                        detail: {
+                          source: 'low_score',
+                          testId: message.metadata?.testId,
+                          testName: message.metadata?.testName,
+                          input: lastUserInput || '',
+                          expected:
+                            message.metadata?.testResult?.expected || '',
+                          matchScore: message.metadata?.testResult?.score,
+                        },
+                      })
+                    )
+                  }
+                >
+                  Diagnose
+                </button>
+              </div>
+            )}
           <div className="mt-2 text-xs text-muted-foreground flex items-center gap-4">
             <div>{message.metadata.testResult.latencyMs}ms result</div>
             <div>
