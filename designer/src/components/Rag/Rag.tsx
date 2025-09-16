@@ -139,6 +139,24 @@ function Rag() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Refresh on processing changes (parsers/extractors add/edit/delete)
+  useEffect(() => {
+    const handler = (_e: Event) => {
+      setMetaTick(t => t + 1)
+    }
+    try {
+      window.addEventListener('lf:processingUpdated', handler as EventListener)
+    } catch {}
+    return () => {
+      try {
+        window.removeEventListener(
+          'lf:processingUpdated',
+          handler as EventListener
+        )
+      } catch {}
+    }
+  }, [])
+
   // Derive display strategies with local overrides
   const strategies: RagStrategy[] = defaultStrategies
 
@@ -293,6 +311,27 @@ function Rag() {
         .map((d: string) => d.trim())
     } catch {
       return []
+    }
+  }
+
+  const getParsersCount = (sid: string): number => {
+    try {
+      const raw = localStorage.getItem(`lf_strategy_parsers_${sid}`)
+      if (!raw) return 7 // default seed
+      const arr = JSON.parse(raw)
+      return Array.isArray(arr) ? arr.length : 7
+    } catch {
+      return 7
+    }
+  }
+  const getExtractorsCount = (sid: string): number => {
+    try {
+      const raw = localStorage.getItem(`lf_strategy_extractors_${sid}`)
+      if (!raw) return 8 // default seed
+      const arr = JSON.parse(raw)
+      return Array.isArray(arr) ? arr.length : 8
+    } catch {
+      return 8
     }
   }
 
@@ -842,7 +881,8 @@ function Rag() {
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      8 parsers • 8 extractors
+                      {getParsersCount(s.id)} parsers •{' '}
+                      {getExtractorsCount(s.id)} extractors
                     </div>
                     <div className="flex justify-end pt-2">
                       <Button
