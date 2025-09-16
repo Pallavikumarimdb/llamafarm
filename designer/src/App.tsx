@@ -18,8 +18,7 @@ import Models from './components/Models/Models'
 import Rag from './components/Rag/Rag'
 import StrategyView from './components/Rag/StrategyView'
 import ChangeEmbeddingModel from './components/Rag/ChangeEmbeddingModel'
-import ExtractionSettings from './components/Rag/ExtractionSettings'
-import ParsingStrategy from './components/Rag/ParsingStrategy'
+// Removed legacy per-strategy pages in favor of unified StrategyView
 import RetrievalMethod from './components/Rag/RetrievalMethod'
 // Projects standalone page removed; Home now hosts projects section
 
@@ -65,14 +64,6 @@ function App() {
                   element={<ChangeEmbeddingModel />}
                 />
                 {/* Legacy routes above remain; new entries reuse same components */}
-                <Route
-                  path="rag/:strategyId/extraction"
-                  element={<ExtractionSettings />}
-                />
-                <Route
-                  path="rag/:strategyId/parsing"
-                  element={<ParsingStrategy />}
-                />
                 <Route
                   path="rag/:strategyId/retrieval"
                   element={<RetrievalMethod />}
