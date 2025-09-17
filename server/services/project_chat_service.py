@@ -124,6 +124,13 @@ class ProjectChatService:
         logger.info(f"RAG search returned {len(normalized)} results")
         return normalized
 
+    def _clear_rag_context_provider(self, chat_agent: ProjectChatOrchestratorAgent) -> None:
+        try:
+            if hasattr(chat_agent, 'context_providers') and chat_agent.context_providers:
+                chat_agent.context_providers.pop("project_chat_context", None)
+        except Exception as e:
+            logger.warning("Failed to clear RAG context provider", exc_info=True)
+
     async def chat(
         self,
         project_dir: str,
@@ -135,8 +142,8 @@ class ProjectChatService:
         rag_top_k: int | None = None,
         rag_score_threshold: float | None = None,
     ) -> ChatCompletion:
+        self._clear_rag_context_provider(chat_agent)
         context_provider = ProjectChatContextProvider(title="Project Chat Context")
-
         chat_agent.register_context_provider("project_chat_context", context_provider)
 
         # Use config defaults if not explicitly provided
@@ -174,7 +181,6 @@ class ProjectChatService:
                 project_dir, project_config, message, top_k=rag_top_k or 5, database=database
             )
 
-        # Store the result from the RAG subsystem in the agent's context provider
         for idx, result in enumerate(rag_results):
             chunk_item = ChunkItem(
                 content=result.content,
@@ -225,6 +231,7 @@ class ProjectChatService:
         rag_score_threshold: float | None = None,
     ) -> AsyncGenerator[str, None]:
         """Yield assistant content chunks, using agent-native streaming if available."""
+        self._clear_rag_context_provider(chat_agent)
         context_provider = ProjectChatContextProvider(title="Project Chat Context")
         chat_agent.register_context_provider("project_chat_context", context_provider)
 
