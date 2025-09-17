@@ -6,12 +6,20 @@ import { Mode } from '../ModeToggle'
 import FontIcon from '../../common/FontIcon'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import { Badge } from '../ui/badge'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from '../ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog'
 
 function RetrievalMethod() {
   const navigate = useNavigate()
@@ -60,11 +68,12 @@ function RetrievalMethod() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className={`h-9 w-full rounded-md border border-input bg-background px-3 text-left ${
+          className={`h-9 w-full rounded-md border border-input bg-background px-3 text-left flex items-center justify-between ${
             className || ''
           } ${inputClass}`}
         >
-          {value}
+          <span className="truncate">{value}</span>
+          <FontIcon type="chevron-down" className="w-4 h-4 opacity-70 ml-2" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="start">
@@ -112,91 +121,184 @@ function RetrievalMethod() {
     </section>
   )
 
-  // Basic settings state
-  const [searchType, setSearchType] = useState('Hybrid')
-  const [resultsCount, setResultsCount] = useState<string>('8')
-  const [reranking, setReranking] = useState<'Enabled' | 'Disabled'>('Enabled')
+  // Strategy options from schema
+  const STRATEGY_TYPES = [
+    'BasicSimilarityStrategy',
+    'MetadataFilteredStrategy',
+    'MultiQueryStrategy',
+    'RerankedStrategy',
+    'HybridUniversalStrategy',
+  ] as const
 
-  // Accordions state
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [rerankOpen, setRerankOpen] = useState(false)
-  const [filtersOpen, setFiltersOpen] = useState(false)
-  const [perfOpen, setPerfOpen] = useState(false)
+  type StrategyType = (typeof STRATEGY_TYPES)[number]
 
-  // Search Configuration
-  const [semanticWeight, setSemanticWeight] = useState<string>('70')
-  const [keywordWeight, setKeywordWeight] = useState<string>('30')
-  const [bm25Params, setBm25Params] = useState('k1=1.2, b=0.75')
-  const [similarityThreshold, setSimilarityThreshold] = useState<string>('0.65')
-  const [maxResultsBeforeRerank, setMaxResultsBeforeRerank] =
-    useState<string>('20')
-  const [queryExpansion, setQueryExpansion] = useState<'Enabled' | 'Disabled'>(
-    'Disabled'
+  const STRATEGY_LABELS: Record<StrategyType, string> = {
+    BasicSimilarityStrategy: 'Basic similarity',
+    MetadataFilteredStrategy: 'Metadata-filtered',
+    MultiQueryStrategy: 'Multi-query',
+    RerankedStrategy: 'Reranked',
+    HybridUniversalStrategy: 'Hybrid universal',
+  }
+
+  const STRATEGY_SLUG: Record<StrategyType, string> = {
+    BasicSimilarityStrategy: 'basic-search',
+    MetadataFilteredStrategy: 'metadata-filtered',
+    MultiQueryStrategy: 'multi-query',
+    RerankedStrategy: 'reranked',
+    HybridUniversalStrategy: 'hybrid-universal',
+  }
+
+  const STRATEGY_DESCRIPTIONS: Record<StrategyType, string> = {
+    BasicSimilarityStrategy:
+      'Simple, fast vector search. Returns the top matches by similarity (you set how many and the distance metric). Optionally filter out weak hits with a score threshold.',
+    MetadataFilteredStrategy:
+      'Search with filters like source, type, date, or tags. Choose whether filters apply before or after retrieval, and automatically widen results when post-filtering removes too much.',
+    MultiQueryStrategy:
+      'Ask the question several ways at once. We create multiple query variations and merge their results so you catch relevant content even when phrased differently.',
+    RerankedStrategy:
+      'Pull a larger candidate set first, then sort by quality. Tune weights for similarity, recency, length, and metadata; optionally normalize scores for fair comparisons.',
+    HybridUniversalStrategy:
+      'Blend multiple strategies into one result set. Combine with weighted average, rank fusion, or score fusion, then keep the best K.',
+  }
+
+  const DISTANCE_OPTIONS = ['cosine', 'euclidean', 'manhattan', 'dot']
+  const META_FILTER_MODE = ['pre', 'post']
+  const MQ_AGGREGATION = ['max', 'mean', 'weighted', 'reciprocal_rank']
+  const HYBRID_COMBINATION = ['weighted_average', 'rank_fusion', 'score_fusion']
+
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyType>(
+    'BasicSimilarityStrategy'
+  )
+  const [isChangeOpen, setIsChangeOpen] = useState(false)
+  const [pendingStrategy, setPendingStrategy] = useState<StrategyType | null>(
+    null
   )
 
-  // Re-ranking
-  const [rerankingModel, setRerankingModel] = useState('ms-marco-v2')
-  const [rerankThreshold, setRerankThreshold] = useState<string>('0.5')
-  const [finalResultCount, setFinalResultCount] = useState<string>('8')
-  const [crossEncoderBatchSize, setCrossEncoderBatchSize] =
-    useState<string>('32')
-  const [gpuAcceleration, setGpuAcceleration] = useState('Auto-detect')
+  // BasicSimilarityStrategy config
+  const [basicTopK, setBasicTopK] = useState<string>('10')
+  const [basicDistance, setBasicDistance] = useState<string>('cosine')
+  const [basicScoreThreshold, setBasicScoreThreshold] = useState<string>('')
 
-  // Filtering & Boosting
-  const [metadataFilters, setMetadataFilters] = useState<string[]>([])
-  const [dateRange, setDateRange] = useState<string>('All dates')
-  const [boostRecent, setBoostRecent] = useState<'Enabled' | 'Disabled'>(
-    'Disabled'
-  )
-  const [sourcePriority, setSourcePriority] = useState<'Enabled' | 'Disabled'>(
-    'Disabled'
-  )
-  const [sectionTypeBoosting, setSectionTypeBoosting] =
-    useState('Headers: 1.2x')
-  const [diversityFactor, setDiversityFactor] = useState<string>('0.3')
+  // MetadataFilteredStrategy config
+  const [mfTopK, setMfTopK] = useState<string>('10')
+  const [mfFilterMode, setMfFilterMode] = useState<string>('pre')
+  const [mfFallbackMultiplier, setMfFallbackMultiplier] = useState<string>('3')
+  const [mfFilters, setMfFilters] = useState<
+    Array<{ key: string; value: string }>
+  >([])
 
-  // Performance
-  const [cacheResults, setCacheResults] = useState<'Enabled' | 'Disabled'>(
+  // MultiQueryStrategy config
+  const [mqNumQueries, setMqNumQueries] = useState<string>('3')
+  const [mqTopK, setMqTopK] = useState<string>('10')
+  const [mqAggregation, setMqAggregation] = useState<string>('weighted')
+  const [mqQueryWeights, setMqQueryWeights] = useState<string>('')
+
+  // RerankedStrategy config
+  const [rrInitialK, setRrInitialK] = useState<string>('30')
+  const [rrFinalK, setRrFinalK] = useState<string>('10')
+  const [rrSimW, setRrSimW] = useState<string>('0.7')
+  const [rrRecencyW, setRrRecencyW] = useState<string>('0.1')
+  const [rrLengthW, setRrLengthW] = useState<string>('0.1')
+  const [rrMetaW, setRrMetaW] = useState<string>('0.1')
+  const [rrNormalize, setRrNormalize] = useState<'Enabled' | 'Disabled'>(
     'Enabled'
   )
-  const [cacheTtl, setCacheTtl] = useState('1 hour')
-  const [asyncProcessing, setAsyncProcessing] = useState<
-    'Enabled' | 'Disabled'
-  >('Enabled')
-  const [maxConcurrentQueries, setMaxConcurrentQueries] = useState<string>('10')
-  const [timeoutPerQuery, setTimeoutPerQuery] = useState<string>('30')
+
+  // HybridUniversalStrategy config
+  type HybridSub = {
+    id: string
+    type: Exclude<StrategyType, 'HybridUniversalStrategy'>
+    weight: string
+    // Minimal nested config per sub-strategy
+    config?: Record<string, unknown>
+  }
+  const [hybStrategies, setHybStrategies] = useState<HybridSub[]>([])
+  const [hybCombination, setHybCombination] =
+    useState<string>('weighted_average')
+  const [hybFinalK, setHybFinalK] = useState<string>('10')
 
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const validate = () => {
+  const validate = (): boolean => {
     const next: Record<string, string> = {}
-    const nResults = Number(resultsCount)
-    const nSem = Number(semanticWeight)
-    const nKey = Number(keywordWeight)
-    const nSim = Number(similarityThreshold)
-    const nMax = Number(maxResultsBeforeRerank)
-    const nFinal = Number(finalResultCount)
-    const nBatch = Number(crossEncoderBatchSize)
-    const nMaxConc = Number(maxConcurrentQueries)
-    const nTimeout = Number(timeoutPerQuery)
-    if (!Number.isFinite(nResults) || nResults < 1 || nResults > 50)
-      next.resultsCount = 'Enter 1–50'
-    if (!Number.isFinite(nSem) || nSem < 0 || nSem > 100)
-      next.semanticWeight = 'Enter 0–100'
-    if (!Number.isFinite(nKey) || nKey < 0 || nKey > 100)
-      next.keywordWeight = 'Enter 0–100'
-    if (!Number.isFinite(nSim) || nSim < 0 || nSim > 1)
-      next.similarityThreshold = 'Enter 0–1'
-    if (!Number.isFinite(nMax) || nMax < 5 || nMax > 100)
-      next.maxResultsBeforeRerank = 'Enter 5–100'
-    if (!Number.isFinite(nFinal) || nFinal < 1 || nFinal > 20)
-      next.finalResultCount = 'Enter 1–20'
-    if (!Number.isFinite(nBatch) || nBatch < 1 || nBatch > 128)
-      next.crossEncoderBatchSize = 'Enter 1–128'
-    if (!Number.isFinite(nMaxConc) || nMaxConc < 1 || nMaxConc > 100)
-      next.maxConcurrentQueries = 'Enter 1–100'
-    if (!Number.isFinite(nTimeout) || nTimeout < 5 || nTimeout > 300)
-      next.timeoutPerQuery = 'Enter 5–300 seconds'
+    const num = (v: string) => Number(v)
+    switch (selectedStrategy) {
+      case 'BasicSimilarityStrategy': {
+        const tk = num(basicTopK)
+        if (!Number.isFinite(tk) || tk < 1 || tk > 1000)
+          next.basicTopK = 'Enter 1–1000'
+        if (basicScoreThreshold !== '') {
+          const thr = num(basicScoreThreshold)
+          if (!Number.isFinite(thr) || thr < 0 || thr > 1)
+            next.basicScoreThreshold = 'Enter 0–1 or leave blank'
+        }
+        break
+      }
+      case 'MetadataFilteredStrategy': {
+        const tk = num(mfTopK)
+        if (!Number.isFinite(tk) || tk < 1 || tk > 1000)
+          next.mfTopK = 'Enter 1–1000'
+        const fm = num(mfFallbackMultiplier)
+        if (!Number.isFinite(fm) || fm < 1 || fm > 10)
+          next.mfFallbackMultiplier = 'Enter 1–10'
+        break
+      }
+      case 'MultiQueryStrategy': {
+        const nq = num(mqNumQueries)
+        if (!Number.isFinite(nq) || nq < 1 || nq > 10)
+          next.mqNumQueries = 'Enter 1–10'
+        const tk = num(mqTopK)
+        if (!Number.isFinite(tk) || tk < 1 || tk > 1000)
+          next.mqTopK = 'Enter 1–1000'
+        if (mqQueryWeights.trim().length > 0) {
+          const parts = mqQueryWeights
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+          if (parts.length !== nq)
+            next.mqQueryWeights = `Provide ${nq} weights or clear`
+          for (const p of parts) {
+            const w = Number(p)
+            if (!Number.isFinite(w) || w < 0 || w > 1) {
+              next.mqQueryWeights = 'Weights must be 0–1'
+              break
+            }
+          }
+        }
+        break
+      }
+      case 'RerankedStrategy': {
+        const ik = num(rrInitialK)
+        if (!Number.isFinite(ik) || ik < 10 || ik > 1000)
+          next.rrInitialK = 'Enter 10–1000'
+        const fk = num(rrFinalK)
+        if (!Number.isFinite(fk) || fk < 1 || fk > 100)
+          next.rrFinalK = 'Enter 1–100'
+        const weights = [
+          ['rrSimW', rrSimW],
+          ['rrRecencyW', rrRecencyW],
+          ['rrLengthW', rrLengthW],
+          ['rrMetaW', rrMetaW],
+        ] as const
+        for (const [k, v] of weights) {
+          const n = num(v)
+          if (!Number.isFinite(n) || n < 0 || n > 1) next[k] = 'Enter 0–1'
+        }
+        break
+      }
+      case 'HybridUniversalStrategy': {
+        const fk = num(hybFinalK)
+        if (!Number.isFinite(fk) || fk < 1 || fk > 1000)
+          next.hybFinalK = 'Enter 1–1000'
+        for (const s of hybStrategies) {
+          const w = num(s.weight)
+          if (!Number.isFinite(w) || w < 0 || w > 1) {
+            next[`hybWeight:${s.id}`] = 'Enter 0–1'
+          }
+        }
+        break
+      }
+    }
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -207,100 +309,178 @@ function RetrievalMethod() {
       if (!storageKey) return
       const raw = localStorage.getItem(storageKey)
       if (!raw) return
-      const cfg = JSON.parse(raw)
-      setSearchType(cfg.searchType ?? searchType)
-      setResultsCount(String(cfg.resultsCount ?? resultsCount))
-      setReranking(cfg.reranking ?? reranking)
-
-      setSemanticWeight(String(cfg.semanticWeight ?? semanticWeight))
-      setKeywordWeight(String(cfg.keywordWeight ?? keywordWeight))
-      setBm25Params(cfg.bm25Params ?? bm25Params)
-      setSimilarityThreshold(
-        String(cfg.similarityThreshold ?? similarityThreshold)
-      )
-      setMaxResultsBeforeRerank(
-        String(cfg.maxResultsBeforeRerank ?? maxResultsBeforeRerank)
-      )
-      setQueryExpansion(cfg.queryExpansion ?? queryExpansion)
-
-      setRerankingModel(cfg.rerankingModel ?? rerankingModel)
-      setRerankThreshold(String(cfg.rerankThreshold ?? rerankThreshold))
-      setFinalResultCount(String(cfg.finalResultCount ?? finalResultCount))
-      setCrossEncoderBatchSize(
-        String(cfg.crossEncoderBatchSize ?? crossEncoderBatchSize)
-      )
-      setGpuAcceleration(cfg.gpuAcceleration ?? gpuAcceleration)
-
-      setMetadataFilters(cfg.metadataFilters ?? metadataFilters)
-      setDateRange(cfg.dateRange ?? dateRange)
-      setBoostRecent(cfg.boostRecent ?? boostRecent)
-      setSourcePriority(cfg.sourcePriority ?? sourcePriority)
-      setSectionTypeBoosting(cfg.sectionTypeBoosting ?? sectionTypeBoosting)
-      setDiversityFactor(String(cfg.diversityFactor ?? diversityFactor))
-
-      setCacheResults(cfg.cacheResults ?? cacheResults)
-      setCacheTtl(cfg.cacheTtl ?? cacheTtl)
-      setAsyncProcessing(cfg.asyncProcessing ?? asyncProcessing)
-      setMaxConcurrentQueries(
-        String(cfg.maxConcurrentQueries ?? maxConcurrentQueries)
-      )
-      setTimeoutPerQuery(String(cfg.timeoutPerQuery ?? timeoutPerQuery))
+      const saved = JSON.parse(raw)
+      if (saved && typeof saved === 'object' && saved.type && saved.config) {
+        const t = saved.type as StrategyType
+        if (STRATEGY_TYPES.includes(t)) setSelectedStrategy(t)
+        const cfg = saved.config || {}
+        if (t === 'BasicSimilarityStrategy') {
+          setBasicTopK(String(cfg.top_k ?? '10'))
+          setBasicDistance(String(cfg.distance_metric ?? 'cosine'))
+          setBasicScoreThreshold(
+            cfg.score_threshold === null || cfg.score_threshold === undefined
+              ? ''
+              : String(cfg.score_threshold)
+          )
+        } else if (t === 'MetadataFilteredStrategy') {
+          setMfTopK(String(cfg.top_k ?? '10'))
+          setMfFilterMode(String(cfg.filter_mode ?? 'pre'))
+          setMfFallbackMultiplier(String(cfg.fallback_multiplier ?? '3'))
+          const fObj = (cfg.filters as Record<string, unknown>) || {}
+          const list: Array<{ key: string; value: string }> = []
+          for (const k of Object.keys(fObj)) {
+            const v = (fObj as any)[k]
+            if (Array.isArray(v)) list.push({ key: k, value: v.join(', ') })
+            else list.push({ key: k, value: String(v) })
+          }
+          setMfFilters(list)
+        } else if (t === 'MultiQueryStrategy') {
+          setMqNumQueries(String(cfg.num_queries ?? '3'))
+          setMqTopK(String(cfg.top_k ?? '10'))
+          setMqAggregation(String(cfg.aggregation_method ?? 'weighted'))
+          const qw = cfg.query_weights as number[] | null | undefined
+          setMqQueryWeights(
+            Array.isArray(qw) ? qw.map(n => String(n)).join(', ') : ''
+          )
+        } else if (t === 'RerankedStrategy') {
+          setRrInitialK(String(cfg.initial_k ?? '30'))
+          setRrFinalK(String(cfg.final_k ?? '10'))
+          const rf = (cfg.rerank_factors as Record<string, unknown>) || {}
+          setRrSimW(String(rf.similarity_weight ?? '0.7'))
+          setRrRecencyW(String(rf.recency_weight ?? '0.1'))
+          setRrLengthW(String(rf.length_weight ?? '0.1'))
+          setRrMetaW(String(rf.metadata_weight ?? '0.1'))
+          setRrNormalize(
+            (cfg.normalize_scores ?? true) ? 'Enabled' : 'Disabled'
+          )
+        } else if (t === 'HybridUniversalStrategy') {
+          setHybCombination(
+            String(cfg.combination_method ?? 'weighted_average')
+          )
+          setHybFinalK(String(cfg.final_k ?? '10'))
+          const subs = (cfg.strategies as any[]) || []
+          const mapped: HybridSub[] = subs
+            .map((s: any, i: number) => ({
+              id: `${s.type || 'sub'}-${i}`,
+              type: (s.type as StrategyType) || 'BasicSimilarityStrategy',
+              weight: String(s.weight ?? '1.0'),
+              config: s.config || {},
+            }))
+            .filter(Boolean)
+          setHybStrategies(mapped)
+        }
+      }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey])
 
-  const [saveState, setSaveState] = useState<'idle' | 'loading' | 'success'>(
-    'idle'
-  )
-
-  const handleSave = () => {
-    if (!validate()) return
-    setSaveState('loading')
-    setTimeout(() => {
-      try {
-        const payload = {
-          searchType,
-          resultsCount: Number(resultsCount),
-          reranking,
-          semanticWeight: Number(semanticWeight),
-          keywordWeight: Number(keywordWeight),
-          bm25Params,
-          similarityThreshold: Number(similarityThreshold),
-          maxResultsBeforeRerank: Number(maxResultsBeforeRerank),
-          queryExpansion,
-          rerankingModel,
-          rerankThreshold: Number(rerankThreshold),
-          finalResultCount: Number(finalResultCount),
-          crossEncoderBatchSize: Number(crossEncoderBatchSize),
-          gpuAcceleration,
-          metadataFilters,
-          dateRange,
-          boostRecent,
-          sourcePriority,
-          sectionTypeBoosting,
-          diversityFactor: Number(diversityFactor),
-          cacheResults,
-          cacheTtl,
-          asyncProcessing,
-          maxConcurrentQueries: Number(maxConcurrentQueries),
-          timeoutPerQuery: Number(timeoutPerQuery),
+  // Auto-save on change
+  useEffect(() => {
+    try {
+      if (!storageKey) return
+      let config: Record<string, unknown> = {}
+      if (selectedStrategy === 'BasicSimilarityStrategy') {
+        config = {
+          top_k: Number(basicTopK),
+          distance_metric: basicDistance,
+          score_threshold:
+            basicScoreThreshold.trim() === ''
+              ? null
+              : Number(basicScoreThreshold),
         }
-        if (storageKey)
-          localStorage.setItem(storageKey, JSON.stringify(payload))
-        try {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('lf:strategyRetrievalUpdated', {
-                detail: { strategyId, payload },
-              })
-            )
-          }
-        } catch {}
+      } else if (selectedStrategy === 'MetadataFilteredStrategy') {
+        const filters: Record<string, unknown> = {}
+        for (const { key, value } of mfFilters) {
+          if (!key.trim()) continue
+          const raw = value.trim()
+          if (raw.includes(','))
+            filters[key] = raw.split(',').map(v => v.trim())
+          else if (raw === 'true' || raw === 'false')
+            filters[key] = raw === 'true'
+          else if (!Number.isNaN(Number(raw))) filters[key] = Number(raw)
+          else filters[key] = raw
+        }
+        config = {
+          top_k: Number(mfTopK),
+          filters,
+          filter_mode: mfFilterMode,
+          fallback_multiplier: Number(mfFallbackMultiplier),
+        }
+      } else if (selectedStrategy === 'MultiQueryStrategy') {
+        const parts = mqQueryWeights
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+        const weights = parts.length ? parts.map(p => Number(p)) : null
+        config = {
+          num_queries: Number(mqNumQueries),
+          top_k: Number(mqTopK),
+          aggregation_method: mqAggregation,
+          query_weights: weights,
+        }
+      } else if (selectedStrategy === 'RerankedStrategy') {
+        config = {
+          initial_k: Number(rrInitialK),
+          final_k: Number(rrFinalK),
+          rerank_factors: {
+            similarity_weight: Number(rrSimW),
+            recency_weight: Number(rrRecencyW),
+            length_weight: Number(rrLengthW),
+            metadata_weight: Number(rrMetaW),
+          },
+          normalize_scores: rrNormalize === 'Enabled',
+        }
+      } else if (selectedStrategy === 'HybridUniversalStrategy') {
+        const strategies = hybStrategies.map(s => ({
+          type: s.type,
+          weight: Number(s.weight),
+          config: s.config || {},
+        }))
+        config = {
+          strategies,
+          combination_method: hybCombination,
+          final_k: Number(hybFinalK),
+        }
+      }
+      const payload = { type: selectedStrategy, config }
+      localStorage.setItem(storageKey, JSON.stringify(payload))
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('lf:strategyRetrievalUpdated', {
+              detail: { strategyId, payload },
+            })
+          )
+        }
       } catch {}
-      setSaveState('success')
-      setTimeout(() => setSaveState('idle'), 800)
-    }, 600)
-  }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    storageKey,
+    strategyId,
+    selectedStrategy,
+    basicTopK,
+    basicDistance,
+    basicScoreThreshold,
+    mfTopK,
+    mfFilterMode,
+    mfFallbackMultiplier,
+    mfFilters,
+    mqNumQueries,
+    mqTopK,
+    mqAggregation,
+    mqQueryWeights,
+    rrInitialK,
+    rrFinalK,
+    rrSimW,
+    rrRecencyW,
+    rrLengthW,
+    rrMetaW,
+    rrNormalize,
+    hybCombination,
+    hybFinalK,
+    hybStrategies,
+  ])
 
   return (
     <div className="h-full w-full flex flex-col gap-3 pb-20">
@@ -314,13 +494,6 @@ function RetrievalMethod() {
             RAG
           </button>
           <span className="text-muted-foreground px-1">/</span>
-          <button
-            className="text-teal-600 dark:text-teal-400 hover:underline"
-            onClick={() => navigate(`/chat/rag/${strategyId}`)}
-          >
-            {strategyName}
-          </button>
-          <span className="text-muted-foreground px-1">/</span>
           <span className="text-foreground">Retrieval method</span>
         </nav>
         <PageActions mode={mode} onModeChange={setMode} />
@@ -329,388 +502,520 @@ function RetrievalMethod() {
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg md:text-xl font-medium">Retrieval method</h2>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/chat/rag/${strategyId}`)}
-          >
-            Back
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={saveState === 'loading'}
-          >
-            {saveState === 'success' ? (
-              <span className="mr-2 inline-flex">
-                <FontIcon type="checkmark-filled" className="w-4 h-4" />
-              </span>
-            ) : null}
-            Save
-          </Button>
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
-
-      {/* Basic settings */}
+      {/* Strategy summary card */}
       <section className="rounded-lg border border-border bg-card p-4">
-        <div className="text-sm font-medium mb-3">Basic settings</div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Field label="Search Type">
-            <SelectDropdown
-              value={searchType}
-              onChange={setSearchType}
-              options={[
-                'Hybrid',
-                'Semantic only',
-                'Keyword only',
-                'Neural search',
-              ]}
-            />
-          </Field>
-          <Field label="Results Count">
-            <Input
-              type="number"
-              value={resultsCount}
-              onChange={e => setResultsCount(e.target.value)}
-              className={`${inputClass} ${errors.resultsCount ? 'border-destructive' : ''}`}
-            />
-            {errors.resultsCount && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.resultsCount}
-              </div>
-            )}
-          </Field>
-          <Field label="Re-ranking">
-            <SelectDropdown
-              value={reranking}
-              onChange={v => setReranking(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-muted-foreground mb-1">
+              Current strategy
+            </div>
+            <div className="text-xl md:text-2xl font-medium">
+              {STRATEGY_SLUG[selectedStrategy]}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {STRATEGY_DESCRIPTIONS[selectedStrategy]}
+            </div>
+          </div>
+          <div className="ml-3 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsChangeOpen(true)}
+            >
+              Change
+            </Button>
+          </div>
         </div>
       </section>
 
-      {/* Search Configuration */}
-      <Collapsible
-        title="Search Configuration"
-        open={searchOpen}
-        onToggle={() => setSearchOpen(o => !o)}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Field label="Semantic Weight (%)">
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Number(semanticWeight)}
-                onChange={e => setSemanticWeight(e.target.value)}
-                className="col-span-2 w-full"
-              />
+      {/* Strategy-specific settings */}
+      {selectedStrategy === 'BasicSimilarityStrategy' ? (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium mb-3">Basic similarity</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Top K">
               <Input
                 type="number"
-                value={semanticWeight}
-                onChange={e => setSemanticWeight(e.target.value)}
-                className={`${inputClass} ${errors.semanticWeight ? 'border-destructive' : ''}`}
+                value={basicTopK}
+                onChange={e => setBasicTopK(e.target.value)}
+                className={`${inputClass} ${errors.basicTopK ? 'border-destructive' : ''}`}
               />
-            </div>
-            {errors.semanticWeight && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.semanticWeight}
-              </div>
-            )}
-          </Field>
-          <Field label="Keyword Weight (%)">
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Number(keywordWeight)}
-                onChange={e => setKeywordWeight(e.target.value)}
-                className="col-span-2 w-full"
+              {errors.basicTopK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.basicTopK}
+                </div>
+              )}
+            </Field>
+            <Field label="Distance metric">
+              <SelectDropdown
+                value={basicDistance}
+                onChange={setBasicDistance}
+                options={DISTANCE_OPTIONS}
               />
-              <Input
-                type="number"
-                value={keywordWeight}
-                onChange={e => setKeywordWeight(e.target.value)}
-                className={`${inputClass} ${errors.keywordWeight ? 'border-destructive' : ''}`}
-              />
-            </div>
-            {errors.keywordWeight && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.keywordWeight}
-              </div>
-            )}
-          </Field>
-          <Field label="BM25 Parameters">
-            <Input
-              value={bm25Params}
-              onChange={e => setBm25Params(e.target.value)}
-              placeholder="k1=value, b=value"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Similarity Threshold (0–1)">
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={Number(similarityThreshold)}
-                onChange={e => setSimilarityThreshold(e.target.value)}
-                className="col-span-2 w-full"
-              />
+            </Field>
+            <Field label="Score threshold (0–1, optional)">
               <Input
                 type="number"
                 step="0.01"
-                value={similarityThreshold}
-                onChange={e => setSimilarityThreshold(e.target.value)}
-                className={`${inputClass} ${errors.similarityThreshold ? 'border-destructive' : ''}`}
+                placeholder="leave blank to disable"
+                value={basicScoreThreshold}
+                onChange={e => setBasicScoreThreshold(e.target.value)}
+                className={`${inputClass} ${errors.basicScoreThreshold ? 'border-destructive' : ''}`}
               />
-            </div>
-            {errors.similarityThreshold && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.similarityThreshold}
-              </div>
-            )}
-          </Field>
-          <Field label="Max Results Before Re-rank">
-            <Input
-              type="number"
-              value={maxResultsBeforeRerank}
-              onChange={e => setMaxResultsBeforeRerank(e.target.value)}
-              className={`${inputClass} ${errors.maxResultsBeforeRerank ? 'border-destructive' : ''}`}
-            />
-            {errors.maxResultsBeforeRerank && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.maxResultsBeforeRerank}
-              </div>
-            )}
-          </Field>
-          <Field label="Query Expansion">
-            <SelectDropdown
-              value={queryExpansion}
-              onChange={v => setQueryExpansion(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
-        </div>
-      </Collapsible>
+              {errors.basicScoreThreshold && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.basicScoreThreshold}
+                </div>
+              )}
+            </Field>
+          </div>
+        </section>
+      ) : null}
 
-      {/* Re-ranking */}
-      <Collapsible
-        title="Re-ranking"
-        open={rerankOpen}
-        onToggle={() => setRerankOpen(o => !o)}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Field label="Re-ranking Model">
-            <SelectDropdown
-              value={rerankingModel}
-              onChange={setRerankingModel}
-              options={[
-                'ms-marco-v2',
-                'cross-encoder-base',
-                'custom-model',
-                'disabled',
-              ]}
-            />
-          </Field>
-          <Field label="Re-ranking Threshold (0–1)">
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={Number(rerankThreshold)}
-                onChange={e => setRerankThreshold(e.target.value)}
-                className="col-span-2 w-full"
+      {selectedStrategy === 'MetadataFilteredStrategy' ? (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium mb-3">Metadata-filtered</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Top K">
+              <Input
+                type="number"
+                value={mfTopK}
+                onChange={e => setMfTopK(e.target.value)}
+                className={`${inputClass} ${errors.mfTopK ? 'border-destructive' : ''}`}
               />
+              {errors.mfTopK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.mfTopK}
+                </div>
+              )}
+            </Field>
+            <Field label="Filter mode">
+              <SelectDropdown
+                value={mfFilterMode}
+                onChange={setMfFilterMode}
+                options={META_FILTER_MODE}
+              />
+            </Field>
+            <Field label="Fallback multiplier">
+              <Input
+                type="number"
+                value={mfFallbackMultiplier}
+                onChange={e => setMfFallbackMultiplier(e.target.value)}
+                className={`${inputClass} ${errors.mfFallbackMultiplier ? 'border-destructive' : ''}`}
+              />
+              {errors.mfFallbackMultiplier && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.mfFallbackMultiplier}
+                </div>
+              )}
+            </Field>
+          </div>
+          <div className="mt-3">
+            <div className="text-xs text-muted-foreground mb-1">
+              Metadata filters
+            </div>
+            <div className="flex flex-col gap-2">
+              {mfFilters.map((f, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-1 md:grid-cols-3 gap-2"
+                >
+                  <Input
+                    placeholder="key"
+                    value={f.key}
+                    onChange={e => {
+                      const next = [...mfFilters]
+                      next[idx] = { ...next[idx], key: e.target.value }
+                      setMfFilters(next)
+                    }}
+                    className={inputClass}
+                  />
+                  <div className="md:col-span-2 flex items-center gap-2">
+                    <Input
+                      placeholder="value (supports numbers, true/false, or a,b,c)"
+                      value={f.value}
+                      onChange={e => {
+                        const next = [...mfFilters]
+                        next[idx] = { ...next[idx], value: e.target.value }
+                        setMfFilters(next)
+                      }}
+                      className={inputClass}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setMfFilters(mfFilters.filter((_, i) => i !== idx))
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setMfFilters([...mfFilters, { key: '', value: '' }])
+                  }
+                >
+                  Add filter
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {selectedStrategy === 'MultiQueryStrategy' ? (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium mb-3">Multi-query</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Number of queries">
+              <Input
+                type="number"
+                value={mqNumQueries}
+                onChange={e => setMqNumQueries(e.target.value)}
+                className={`${inputClass} ${errors.mqNumQueries ? 'border-destructive' : ''}`}
+              />
+              {errors.mqNumQueries && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.mqNumQueries}
+                </div>
+              )}
+            </Field>
+            <Field label="Top K per query">
+              <Input
+                type="number"
+                value={mqTopK}
+                onChange={e => setMqTopK(e.target.value)}
+                className={`${inputClass} ${errors.mqTopK ? 'border-destructive' : ''}`}
+              />
+              {errors.mqTopK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.mqTopK}
+                </div>
+              )}
+            </Field>
+            <Field label="Aggregation method">
+              <SelectDropdown
+                value={mqAggregation}
+                onChange={setMqAggregation}
+                options={MQ_AGGREGATION}
+              />
+            </Field>
+            <Field label={`Query weights (${mqNumQueries} values, optional)`}>
+              <Input
+                placeholder="e.g. 0.6, 0.3, 0.1"
+                value={mqQueryWeights}
+                onChange={e => setMqQueryWeights(e.target.value)}
+                className={`${inputClass} ${errors.mqQueryWeights ? 'border-destructive' : ''}`}
+              />
+              {errors.mqQueryWeights && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.mqQueryWeights}
+                </div>
+              )}
+            </Field>
+          </div>
+        </section>
+      ) : null}
+
+      {selectedStrategy === 'RerankedStrategy' ? (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium mb-3">Reranked</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Initial candidates (K)">
+              <Input
+                type="number"
+                value={rrInitialK}
+                onChange={e => setRrInitialK(e.target.value)}
+                className={`${inputClass} ${errors.rrInitialK ? 'border-destructive' : ''}`}
+              />
+              {errors.rrInitialK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrInitialK}
+                </div>
+              )}
+            </Field>
+            <Field label="Final results (K)">
+              <Input
+                type="number"
+                value={rrFinalK}
+                onChange={e => setRrFinalK(e.target.value)}
+                className={`${inputClass} ${errors.rrFinalK ? 'border-destructive' : ''}`}
+              />
+              {errors.rrFinalK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrFinalK}
+                </div>
+              )}
+            </Field>
+            <Field label="Normalize scores">
+              <SelectDropdown
+                value={rrNormalize}
+                onChange={v => setRrNormalize(v as 'Enabled' | 'Disabled')}
+                options={['Enabled', 'Disabled']}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2">
+            <Field label="Similarity weight (0–1)">
               <Input
                 type="number"
                 step="0.01"
-                value={rerankThreshold}
-                onChange={e => setRerankThreshold(e.target.value)}
-                className={inputClass}
+                value={rrSimW}
+                onChange={e => setRrSimW(e.target.value)}
+                className={`${inputClass} ${errors.rrSimW ? 'border-destructive' : ''}`}
               />
-            </div>
-          </Field>
-          <Field label="Final Result Count">
-            <Input
-              type="number"
-              value={finalResultCount}
-              onChange={e => setFinalResultCount(e.target.value)}
-              className={`${inputClass} ${errors.finalResultCount ? 'border-destructive' : ''}`}
-            />
-            {errors.finalResultCount && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.finalResultCount}
-              </div>
-            )}
-          </Field>
-          <Field label="Cross-encoder Batch Size">
-            <Input
-              type="number"
-              value={crossEncoderBatchSize}
-              onChange={e => setCrossEncoderBatchSize(e.target.value)}
-              className={`${inputClass} ${errors.crossEncoderBatchSize ? 'border-destructive' : ''}`}
-            />
-            {errors.crossEncoderBatchSize && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.crossEncoderBatchSize}
-              </div>
-            )}
-          </Field>
-          <Field label="Use GPU Acceleration">
-            <SelectDropdown
-              value={gpuAcceleration}
-              onChange={setGpuAcceleration}
-              options={['Auto-detect', 'Force GPU', 'Force CPU', 'Disabled']}
-            />
-          </Field>
-        </div>
-      </Collapsible>
-
-      {/* Filtering & Boosting */}
-      <Collapsible
-        title="Filtering & Boosting"
-        open={filtersOpen}
-        onToggle={() => setFiltersOpen(o => !o)}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Field label="Metadata Filters">
-            <Input
-              value={metadataFilters.join(', ')}
-              onChange={e =>
-                setMetadataFilters(
-                  e.target.value
-                    .split(',')
-                    .map(v => v.trim())
-                    .filter(Boolean)
-                )
-              }
-              placeholder="department, document_type, date_range, author, version"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Date Range Filter">
-            <SelectDropdown
-              value={dateRange}
-              onChange={setDateRange}
-              options={[
-                'All dates',
-                'Past week',
-                'Past month',
-                'Past year',
-                'Custom',
-              ]}
-            />
-          </Field>
-          <Field label="Boost Recent Content">
-            <SelectDropdown
-              value={boostRecent}
-              onChange={v => setBoostRecent(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
-          <Field label="Source Priority Boosting">
-            <SelectDropdown
-              value={sourcePriority}
-              onChange={v => setSourcePriority(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
-          <Field label="Section Type Boosting">
-            <Input
-              value={sectionTypeBoosting}
-              onChange={e => setSectionTypeBoosting(e.target.value)}
-              placeholder="section_type: multiplier"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Diversity Factor (0–1)">
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.1}
-                value={Number(diversityFactor)}
-                onChange={e => setDiversityFactor(e.target.value)}
-                className="col-span-2 w-full"
-              />
+              {errors.rrSimW && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrSimW}
+                </div>
+              )}
+            </Field>
+            <Field label="Recency weight (0–1)">
               <Input
                 type="number"
-                step="0.1"
-                value={diversityFactor}
-                onChange={e => setDiversityFactor(e.target.value)}
-                className={inputClass}
+                step="0.01"
+                value={rrRecencyW}
+                onChange={e => setRrRecencyW(e.target.value)}
+                className={`${inputClass} ${errors.rrRecencyW ? 'border-destructive' : ''}`}
               />
-            </div>
-          </Field>
-        </div>
-      </Collapsible>
+              {errors.rrRecencyW && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrRecencyW}
+                </div>
+              )}
+            </Field>
+            <Field label="Length weight (0–1)">
+              <Input
+                type="number"
+                step="0.01"
+                value={rrLengthW}
+                onChange={e => setRrLengthW(e.target.value)}
+                className={`${inputClass} ${errors.rrLengthW ? 'border-destructive' : ''}`}
+              />
+              {errors.rrLengthW && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrLengthW}
+                </div>
+              )}
+            </Field>
+            <Field label="Metadata weight (0–1)">
+              <Input
+                type="number"
+                step="0.01"
+                value={rrMetaW}
+                onChange={e => setRrMetaW(e.target.value)}
+                className={`${inputClass} ${errors.rrMetaW ? 'border-destructive' : ''}`}
+              />
+              {errors.rrMetaW && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.rrMetaW}
+                </div>
+              )}
+            </Field>
+          </div>
+        </section>
+      ) : null}
 
-      {/* Performance */}
-      <Collapsible
-        title="Performance"
-        open={perfOpen}
-        onToggle={() => setPerfOpen(o => !o)}
+      {selectedStrategy === 'HybridUniversalStrategy' ? (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium mb-3">Hybrid universal</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Combination method">
+              <SelectDropdown
+                value={hybCombination}
+                onChange={setHybCombination}
+                options={HYBRID_COMBINATION}
+              />
+            </Field>
+            <Field label="Final K">
+              <Input
+                type="number"
+                value={hybFinalK}
+                onChange={e => setHybFinalK(e.target.value)}
+                className={`${inputClass} ${errors.hybFinalK ? 'border-destructive' : ''}`}
+              />
+              {errors.hybFinalK && (
+                <div className="text-xs text-destructive mt-0.5">
+                  {errors.hybFinalK}
+                </div>
+              )}
+            </Field>
+          </div>
+          <div className="mt-3">
+            <div className="text-xs text-muted-foreground mb-1">
+              Sub-strategies
+            </div>
+            <div className="flex flex-col gap-2">
+              {hybStrategies.map((s, idx) => (
+                <div key={s.id} className="rounded-md border border-border p-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
+                    <SelectDropdown
+                      value={STRATEGY_LABELS[s.type]}
+                      onChange={label => {
+                        const entry = (
+                          Object.entries(STRATEGY_LABELS) as Array<
+                            [StrategyType, string]
+                          >
+                        ).find(([, v]) => v === label)
+                        if (entry) {
+                          const next = [...hybStrategies]
+                          next[idx] = { ...next[idx], type: entry[0] as any }
+                          setHybStrategies(next)
+                        }
+                      }}
+                      options={STRATEGY_TYPES.filter(
+                        t => t !== 'HybridUniversalStrategy'
+                      ).map(t => STRATEGY_LABELS[t])}
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={s.weight}
+                      onChange={e => {
+                        const next = [...hybStrategies]
+                        next[idx] = { ...next[idx], weight: e.target.value }
+                        setHybStrategies(next)
+                      }}
+                      className={`${inputClass} ${errors[`hybWeight:${s.id}`] ? 'border-destructive' : ''}`}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const next = [...hybStrategies]
+                          next.splice(idx, 1)
+                          setHybStrategies(next)
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setHybStrategies([
+                      ...hybStrategies,
+                      {
+                        id: `sub-${Date.now()}`,
+                        type: 'BasicSimilarityStrategy',
+                        weight: '1.0',
+                        config: {},
+                      },
+                    ])
+                  }
+                >
+                  Add sub-strategy
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {/* Change Strategy Modal */}
+      <Dialog
+        open={isChangeOpen}
+        onOpenChange={open => {
+          setIsChangeOpen(open)
+          if (open) setPendingStrategy(selectedStrategy)
+        }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Field label="Cache Results">
-            <SelectDropdown
-              value={cacheResults}
-              onChange={v => setCacheResults(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
-          <Field label="Cache TTL">
-            <SelectDropdown
-              value={cacheTtl}
-              onChange={setCacheTtl}
-              options={['1 hour', '4 hours', '12 hours', '24 hours', '1 week']}
-            />
-          </Field>
-          <Field label="Async Processing">
-            <SelectDropdown
-              value={asyncProcessing}
-              onChange={v => setAsyncProcessing(v as 'Enabled' | 'Disabled')}
-              options={['Enabled', 'Disabled']}
-            />
-          </Field>
-          <Field label="Max Concurrent Queries">
-            <Input
-              type="number"
-              value={maxConcurrentQueries}
-              onChange={e => setMaxConcurrentQueries(e.target.value)}
-              className={`${inputClass} ${errors.maxConcurrentQueries ? 'border-destructive' : ''}`}
-            />
-            {errors.maxConcurrentQueries && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.maxConcurrentQueries}
+        <DialogContent className="sm:max-w-3xl p-0">
+          <div className="flex flex-col max-h-[80vh]">
+            <DialogHeader className="bg-background p-4 border-b">
+              <DialogTitle className="text-lg text-foreground">
+                Select retrieval strategy
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {STRATEGY_TYPES.map(t => {
+                  const isCurrent = t === selectedStrategy
+                  return (
+                    <button
+                      key={t}
+                      className={`text-left rounded-lg border border-border bg-card p-3 transition-colors ${
+                        pendingStrategy === t ? 'ring-2 ring-teal-500' : ''
+                      } ${isCurrent ? 'opacity-70 cursor-not-allowed' : 'hover:bg-accent/20'}`}
+                      onClick={() => {
+                        if (!isCurrent) setPendingStrategy(t)
+                      }}
+                      aria-disabled={isCurrent}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-medium">
+                            {STRATEGY_LABELS[t]}
+                          </div>
+                          {isCurrent ? (
+                            <Badge
+                              variant="secondary"
+                              size="sm"
+                              className="rounded-xl"
+                            >
+                              Current
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isCurrent}
+                          onClick={e => {
+                            e.stopPropagation()
+                            if (!isCurrent) setPendingStrategy(t)
+                          }}
+                        >
+                          {isCurrent ? 'Current' : 'Select'}
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {STRATEGY_DESCRIPTIONS[t]}
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
-            )}
-          </Field>
-          <Field label="Timeout per Query (seconds)">
-            <Input
-              type="number"
-              value={timeoutPerQuery}
-              onChange={e => setTimeoutPerQuery(e.target.value)}
-              className={`${inputClass} ${errors.timeoutPerQuery ? 'border-destructive' : ''}`}
-            />
-            {errors.timeoutPerQuery && (
-              <div className="text-xs text-destructive mt-0.5">
-                {errors.timeoutPerQuery}
-              </div>
-            )}
-          </Field>
-        </div>
-      </Collapsible>
+            </div>
+            <DialogFooter className="bg-background p-4 border-t flex items-center gap-2">
+              <button
+                className="px-3 py-2 rounded-md text-sm text-primary hover:underline"
+                onClick={() => setIsChangeOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-2 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
+                disabled={
+                  !pendingStrategy || pendingStrategy === selectedStrategy
+                }
+                onClick={() => {
+                  if (pendingStrategy) setSelectedStrategy(pendingStrategy)
+                  setIsChangeOpen(false)
+                }}
+                type="button"
+              >
+                Save changes
+              </button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
