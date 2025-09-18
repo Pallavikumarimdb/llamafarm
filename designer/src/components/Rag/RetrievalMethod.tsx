@@ -217,6 +217,62 @@ function RetrievalMethod() {
     useState<string>('weighted_average')
   const [hybFinalK, setHybFinalK] = useState<string>('10')
 
+  // Helpers for Hybrid sub-strategy config defaults and updates
+  const getDefaultConfigForType = (
+    type: Exclude<StrategyType, 'HybridUniversalStrategy'>
+  ): Record<string, unknown> => {
+    switch (type) {
+      case 'BasicSimilarityStrategy':
+        return { top_k: 10, distance_metric: 'cosine', score_threshold: null }
+      case 'MetadataFilteredStrategy':
+        return {
+          top_k: 10,
+          filters: {},
+          filter_mode: 'pre',
+          fallback_multiplier: 3,
+        }
+      case 'MultiQueryStrategy':
+        return {
+          num_queries: 3,
+          top_k: 10,
+          aggregation_method: 'weighted',
+          query_weights: null,
+        }
+      case 'RerankedStrategy':
+        return {
+          initial_k: 30,
+          final_k: 10,
+          rerank_factors: {
+            similarity_weight: 0.7,
+            recency_weight: 0.1,
+            length_weight: 0.1,
+            metadata_weight: 0.1,
+          },
+          normalize_scores: true,
+        }
+    }
+  }
+
+  const updateHybridSub = (index: number, partial: Partial<HybridSub>) => {
+    setHybStrategies(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], ...partial }
+      return next
+    })
+  }
+
+  const updateHybridSubConfig = (
+    index: number,
+    updater: (prev: Record<string, unknown>) => Record<string, unknown>
+  ) => {
+    setHybStrategies(prev => {
+      const next = [...prev]
+      const current = (next[index]?.config as Record<string, unknown>) || {}
+      next[index] = { ...next[index], config: updater(current) }
+      return next
+    })
+  }
+
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({})
   const validate = (): boolean => {
@@ -866,9 +922,14 @@ function RetrievalMethod() {
                           >
                         ).find(([, v]) => v === label)
                         if (entry) {
-                          const next = [...hybStrategies]
-                          next[idx] = { ...next[idx], type: entry[0] as any }
-                          setHybStrategies(next)
+                          const newType = entry[0] as Exclude<
+                            StrategyType,
+                            'HybridUniversalStrategy'
+                          >
+                          updateHybridSub(idx, {
+                            type: newType,
+                            config: getDefaultConfigForType(newType),
+                          })
                         }
                       }}
                       options={STRATEGY_TYPES.filter(
@@ -880,9 +941,7 @@ function RetrievalMethod() {
                       step="0.01"
                       value={s.weight}
                       onChange={e => {
-                        const next = [...hybStrategies]
-                        next[idx] = { ...next[idx], weight: e.target.value }
-                        setHybStrategies(next)
+                        updateHybridSub(idx, { weight: e.target.value })
                       }}
                       className={`${inputClass} ${errors[`hybWeight:${s.id}`] ? 'border-destructive' : ''}`}
                     />
@@ -891,14 +950,484 @@ function RetrievalMethod() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const next = [...hybStrategies]
-                          next.splice(idx, 1)
-                          setHybStrategies(next)
+                          setHybStrategies(prev => {
+                            const next = [...prev]
+                            next.splice(idx, 1)
+                            return next
+                          })
                         }}
                       >
                         Remove
                       </Button>
                     </div>
+                  </div>
+                  {/* Sub-strategy specific settings */}
+                  <div className="mt-3">
+                    {s.type === 'BasicSimilarityStrategy' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <Field label="Top K">
+                          <Input
+                            type="number"
+                            value={String(
+                              ((s.config as any)?.top_k ?? 10) as number
+                            )}
+                            onChange={e =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                top_k: Number(e.target.value),
+                              }))
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                        <Field label="Distance metric">
+                          <SelectDropdown
+                            value={String(
+                              (s.config as any)?.distance_metric ?? 'cosine'
+                            )}
+                            onChange={v =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                distance_metric: v,
+                              }))
+                            }
+                            options={DISTANCE_OPTIONS}
+                          />
+                        </Field>
+                        <Field label="Score threshold (0–1, optional)">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="leave blank to disable"
+                            value={((): string => {
+                              const thr = (s.config as any)?.score_threshold
+                              return thr === null || thr === undefined
+                                ? ''
+                                : String(thr)
+                            })()}
+                            onChange={e =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                score_threshold:
+                                  e.target.value.trim() === ''
+                                    ? null
+                                    : Number(e.target.value),
+                              }))
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                      </div>
+                    ) : null}
+
+                    {s.type === 'MetadataFilteredStrategy' ? (
+                      <div className="flex flex-col gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <Field label="Top K">
+                            <Input
+                              type="number"
+                              value={String(
+                                ((s.config as any)?.top_k ?? 10) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  top_k: Number(e.target.value),
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Filter mode">
+                            <SelectDropdown
+                              value={String(
+                                (s.config as any)?.filter_mode ?? 'pre'
+                              )}
+                              onChange={v =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  filter_mode: v,
+                                }))
+                              }
+                              options={META_FILTER_MODE}
+                            />
+                          </Field>
+                          <Field label="Fallback multiplier">
+                            <Input
+                              type="number"
+                              value={String(
+                                (s.config as any)?.fallback_multiplier ?? 3
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  fallback_multiplier: Number(e.target.value),
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">
+                            Metadata filters
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {Object.entries(
+                              ((s.config as any)?.filters as Record<
+                                string,
+                                unknown
+                              >) || {}
+                            ).map(([key, value], fIdx, arr) => (
+                              <div
+                                key={`${key}-${fIdx}`}
+                                className="grid grid-cols-1 md:grid-cols-3 gap-2"
+                              >
+                                <Input
+                                  placeholder="key"
+                                  value={key}
+                                  onChange={e => {
+                                    const newKey = e.target.value
+                                    updateHybridSubConfig(idx, prev => {
+                                      const current =
+                                        (prev.filters as Record<
+                                          string,
+                                          unknown
+                                        >) || {}
+                                      const nextFilters: Record<
+                                        string,
+                                        unknown
+                                      > = {}
+                                      Object.entries(current).forEach(
+                                        ([k, v], i) => {
+                                          if (i === fIdx)
+                                            nextFilters[newKey] = v
+                                          else nextFilters[k] = v
+                                        }
+                                      )
+                                      return { ...prev, filters: nextFilters }
+                                    })
+                                  }}
+                                  className={inputClass}
+                                />
+                                <div className="md:col-span-2 flex items-center gap-2">
+                                  <Input
+                                    placeholder="value (supports numbers, true/false, or a,b,c)"
+                                    value={
+                                      Array.isArray(value)
+                                        ? (value as unknown[])
+                                            .map(v => String(v))
+                                            .join(', ')
+                                        : String(value)
+                                    }
+                                    onChange={e => {
+                                      const raw = e.target.value.trim()
+                                      const parsed: unknown = raw.includes(',')
+                                        ? raw
+                                            .split(',')
+                                            .map(v => v.trim())
+                                            .filter(Boolean)
+                                        : raw === 'true' || raw === 'false'
+                                          ? raw === 'true'
+                                          : Number.isNaN(Number(raw))
+                                            ? raw
+                                            : Number(raw)
+                                      updateHybridSubConfig(idx, prev => {
+                                        const current =
+                                          (prev.filters as Record<
+                                            string,
+                                            unknown
+                                          >) || {}
+                                        const nextFilters: Record<
+                                          string,
+                                          unknown
+                                        > = {}
+                                        Object.entries(current).forEach(
+                                          ([k, v], i) => {
+                                            nextFilters[k] =
+                                              i === fIdx ? parsed : v
+                                          }
+                                        )
+                                        return { ...prev, filters: nextFilters }
+                                      })
+                                    }}
+                                    className={inputClass}
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      updateHybridSubConfig(idx, prev => {
+                                        const current =
+                                          (prev.filters as Record<
+                                            string,
+                                            unknown
+                                          >) || {}
+                                        const nextFilters: Record<
+                                          string,
+                                          unknown
+                                        > = {}
+                                        Object.entries(current).forEach(
+                                          ([k, v], i) => {
+                                            if (i !== fIdx) nextFilters[k] = v
+                                          }
+                                        )
+                                        return { ...prev, filters: nextFilters }
+                                      })
+                                    }
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                            <div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  updateHybridSubConfig(idx, prev => {
+                                    const current =
+                                      (prev.filters as Record<
+                                        string,
+                                        unknown
+                                      >) || {}
+                                    const nextFilters: Record<string, unknown> =
+                                      {
+                                        ...current,
+                                      }
+                                    const newKeyBase = 'key'
+                                    let newKey = newKeyBase
+                                    let i = 1
+                                    while (nextFilters.hasOwnProperty(newKey)) {
+                                      newKey = `${newKeyBase}_${i++}`
+                                    }
+                                    nextFilters[newKey] = ''
+                                    return { ...prev, filters: nextFilters }
+                                  })
+                                }
+                              >
+                                Add filter
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {s.type === 'MultiQueryStrategy' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <Field label="Number of queries">
+                          <Input
+                            type="number"
+                            value={String(
+                              ((s.config as any)?.num_queries ?? 3) as number
+                            )}
+                            onChange={e =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                num_queries: Number(e.target.value),
+                              }))
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                        <Field label="Top K per query">
+                          <Input
+                            type="number"
+                            value={String(
+                              ((s.config as any)?.top_k ?? 10) as number
+                            )}
+                            onChange={e =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                top_k: Number(e.target.value),
+                              }))
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                        <Field label="Aggregation method">
+                          <SelectDropdown
+                            value={String(
+                              (s.config as any)?.aggregation_method ??
+                                'weighted'
+                            )}
+                            onChange={v =>
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                aggregation_method: v,
+                              }))
+                            }
+                            options={MQ_AGGREGATION}
+                          />
+                        </Field>
+                        <Field
+                          label={`Query weights (${String(
+                            (s.config as any)?.num_queries ?? 3
+                          )} values, optional)`}
+                        >
+                          <Input
+                            placeholder="e.g. 0.6, 0.3, 0.1"
+                            value={((): string => {
+                              const qw = (s.config as any)?.query_weights
+                              return Array.isArray(qw)
+                                ? qw.map((n: any) => String(n)).join(', ')
+                                : ''
+                            })()}
+                            onChange={e => {
+                              const parts = e.target.value
+                                .split(',')
+                                .map(s => s.trim())
+                                .filter(Boolean)
+                              const weights = parts.length
+                                ? parts.map(p => Number(p))
+                                : null
+                              updateHybridSubConfig(idx, prev => ({
+                                ...prev,
+                                query_weights: weights,
+                              }))
+                            }}
+                            className={inputClass}
+                          />
+                        </Field>
+                      </div>
+                    ) : null}
+
+                    {s.type === 'RerankedStrategy' ? (
+                      <div className="flex flex-col gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <Field label="Initial candidates (K)">
+                            <Input
+                              type="number"
+                              value={String(
+                                ((s.config as any)?.initial_k ?? 30) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  initial_k: Number(e.target.value),
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Final results (K)">
+                            <Input
+                              type="number"
+                              value={String(
+                                ((s.config as any)?.final_k ?? 10) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  final_k: Number(e.target.value),
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Normalize scores">
+                            <SelectDropdown
+                              value={
+                                ((s.config as any)?.normalize_scores ?? true)
+                                  ? 'Enabled'
+                                  : 'Disabled'
+                              }
+                              onChange={v =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  normalize_scores: v === 'Enabled',
+                                }))
+                              }
+                              options={['Enabled', 'Disabled']}
+                            />
+                          </Field>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                          <Field label="Similarity weight (0–1)">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={String(
+                                ((s.config as any)?.rerank_factors
+                                  ?.similarity_weight ?? 0.7) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  rerank_factors: {
+                                    ...(prev as any).rerank_factors,
+                                    similarity_weight: Number(e.target.value),
+                                  },
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Recency weight (0–1)">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={String(
+                                ((s.config as any)?.rerank_factors
+                                  ?.recency_weight ?? 0.1) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  rerank_factors: {
+                                    ...(prev as any).rerank_factors,
+                                    recency_weight: Number(e.target.value),
+                                  },
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Length weight (0–1)">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={String(
+                                ((s.config as any)?.rerank_factors
+                                  ?.length_weight ?? 0.1) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  rerank_factors: {
+                                    ...(prev as any).rerank_factors,
+                                    length_weight: Number(e.target.value),
+                                  },
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                          <Field label="Metadata weight (0–1)">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={String(
+                                ((s.config as any)?.rerank_factors
+                                  ?.metadata_weight ?? 0.1) as number
+                              )}
+                              onChange={e =>
+                                updateHybridSubConfig(idx, prev => ({
+                                  ...prev,
+                                  rerank_factors: {
+                                    ...(prev as any).rerank_factors,
+                                    metadata_weight: Number(e.target.value),
+                                  },
+                                }))
+                              }
+                              className={inputClass}
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -913,7 +1442,9 @@ function RetrievalMethod() {
                         id: `sub-${Date.now()}`,
                         type: 'BasicSimilarityStrategy',
                         weight: '1.0',
-                        config: {},
+                        config: getDefaultConfigForType(
+                          'BasicSimilarityStrategy'
+                        ),
                       },
                     ])
                   }
