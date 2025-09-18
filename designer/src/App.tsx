@@ -18,6 +18,8 @@ import Models from './components/Models/Models'
 import Rag from './components/Rag/Rag'
 import StrategyView from './components/Rag/StrategyView'
 import ChangeEmbeddingModel from './components/Rag/ChangeEmbeddingModel'
+// @ts-ignore - component is TSX local file
+import AddEmbeddingStrategy from './components/Rag/AddEmbeddingStrategy'
 // Removed legacy per-strategy pages in favor of unified StrategyView
 import RetrievalMethod from './components/Rag/RetrievalMethod'
 // Projects standalone page removed; Home now hosts projects section
@@ -57,6 +59,10 @@ function App() {
                 <Route path="models" element={<Models />} />
                 <Route path="rag" element={<Rag />} />
                 {/* Project-level pages */}
+                <Route
+                  path="rag/add-embedding"
+                  element={<AddEmbeddingStrategy />}
+                />
                 <Route path="rag/processing" element={<StrategyView />} />
                 <Route path="rag/:strategyId" element={<StrategyView />} />
                 <Route

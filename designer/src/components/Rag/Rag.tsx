@@ -40,6 +40,7 @@ function Rag() {
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [copyFromId, setCopyFromId] = useState('')
+  const [reembedOpen, setReembedOpen] = useState(false)
 
   // Project-level configs (Embeddings / Retrievals) -------------------------
   type EmbeddingItem = {
@@ -135,6 +136,28 @@ function Rag() {
           },
         ])
       }
+      // Ensure each embedding strategy has a default config for display
+      const embeddings = getEmbeddings()
+      embeddings.forEach(e => {
+        const key = `lf_strategy_embedding_config_${e.id}`
+        const raw = localStorage.getItem(key)
+        if (!raw) {
+          const payload = {
+            runtime: 'local',
+            provider: 'Ollama (remote)',
+            modelId: 'nomic-embed-text',
+            baseUrl: 'http://localhost:11434',
+            batchSize: 16,
+            dimension: 768,
+            maxInputTokens: 8192,
+            similarity: 'cosine',
+            timeout: 60,
+          }
+          try {
+            localStorage.setItem(key, JSON.stringify(payload))
+          } catch {}
+        }
+      })
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -273,22 +296,28 @@ function Rag() {
       const p = cfg?.provider || cfg?.runtime || null
       if (!p) return null
       if (typeof p === 'string') {
-        if (p.includes('Ollama')) return 'OllamaEmbedder'
-        if (p.includes('OpenAI')) return 'OpenAIEmbedder'
-        if (p.includes('Cohere')) return 'CohereEmbedder'
-        if (p.includes('Google')) return 'GoogleEmbedder'
-        if (p.includes('Azure')) return 'AzureOpenAIEmbedder'
-        if (p.includes('Bedrock')) return 'BedrockEmbedder'
+        if (p.includes('Ollama')) return 'Ollama'
+        if (p.includes('OpenAI')) return 'OpenAI'
+        if (p.includes('Cohere')) return 'Cohere'
+        if (p.includes('Google')) return 'Google'
+        if (p.includes('Azure')) return 'Azure OpenAI'
+        if (p.includes('Bedrock')) return 'AWS Bedrock'
       }
       return String(p)
     } catch {
       return null
     }
   }
-  const getEmbeddingDescription = (id: string): string => {
-    const provider = getEmbeddingProvider(id)
-    const short = provider?.replace(/Embedder$/g, '') || 'cloud/local'
-    return `Document vectorization using ${short} embedding models`
+  // kept for future use if needed; currently not used after card redesign
+  const getEmbeddingDimension = (id: string): number | null => {
+    try {
+      const raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      if (!raw) return null
+      const cfg = JSON.parse(raw)
+      return typeof cfg?.dimension === 'number' ? cfg.dimension : null
+    } catch {
+      return null
+    }
   }
   const getEmbeddingLocation = (id: string): string | null => {
     try {
@@ -325,6 +354,20 @@ function Rag() {
         return 'localhost:11434'
       }
       return null
+    } catch {
+      return null
+    }
+  }
+  const getEmbeddingRuntime = (id: string): 'Local' | 'Cloud' | null => {
+    try {
+      const raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      if (!raw) return null
+      const cfg = JSON.parse(raw)
+      if (cfg?.runtime === 'local') return 'Local'
+      if (cfg?.runtime === 'cloud') return 'Cloud'
+      const p = String(cfg?.provider || '').toLowerCase()
+      if (p.includes('ollama')) return 'Local'
+      return 'Cloud'
     } catch {
       return null
     }
@@ -406,27 +449,6 @@ function Rag() {
 
   const setDefaultEmbedding = (id: string) => {
     const list = getEmbeddings().map(e => ({ ...e, isDefault: e.id === id }))
-    saveEmbeddings(list)
-    setMetaTick(t => t + 1)
-  }
-  const toggleEmbeddingEnabled = (id: string) => {
-    const list = getEmbeddings().map(e =>
-      e.id === id ? { ...e, enabled: !e.enabled } : e
-    )
-    saveEmbeddings(list)
-    setMetaTick(t => t + 1)
-  }
-  const duplicateEmbedding = (id: string) => {
-    const list = getEmbeddings()
-    const found = list.find(e => e.id === id)
-    if (!found) return
-    const base = `${found.name} (copy)`
-    const slug = base
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-    const newId = `emb-${slug}-${Date.now()}`
-    list.push({ ...found, id: newId, name: base, isDefault: false })
     saveEmbeddings(list)
     setMetaTick(t => t + 1)
   }
@@ -660,10 +682,20 @@ function Rag() {
             <div className="text-sm font-medium mb-1 mt-6">
               Project Embedding and retrieval strategies
             </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              {/* Embeddings block */}
-              <div className="text-sm text-muted-foreground mb-2">
-                Embedding strategies ({embeddingCount})
+            {/* Embeddings card */}
+            <div className="rounded-lg border border-border bg-card p-4 pt-3">
+              {/* Embeddings block header with Add new inline */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm text-foreground font-medium">
+                  Embedding strategies ({embeddingCount})
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/chat/rag/add-embedding')}
+                >
+                  Add new
+                </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sortedEmbeddings.map(ei => (
@@ -699,52 +731,37 @@ function Rag() {
                           <DropdownMenuItem
                             onClick={e => {
                               e.stopPropagation()
-                              const name = prompt(
-                                'Rename embedding strategy',
-                                ei.name
-                              )?.trim()
-                              if (!name) return
-                              const list = getEmbeddings().map(x =>
-                                x.id === ei.id ? { ...x, name } : x
-                              )
-                              saveEmbeddings(list)
-                              setMetaTick(t => t + 1)
+                              navigate(`/chat/rag/${ei.id}/change-embedding`)
                             }}
                           >
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              duplicateEmbedding(ei.id)
-                            }}
-                          >
-                            Duplicate
+                            Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={e => {
                               e.stopPropagation()
                               setDefaultEmbedding(ei.id)
+                              setReembedOpen(true)
                             }}
                           >
-                            Set as default
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              toggleEmbeddingEnabled(ei.id)
-                            }}
-                          >
-                            {ei.enabled ? 'Disable' : 'Enable'}
+                            Make default
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={e => {
                               e.stopPropagation()
                               const ok = confirm(
-                                'Delete this embedding strategy?'
+                                'Remove this embedding strategy?'
                               )
                               if (!ok) return
+                              // hard delete config and list entry
+                              try {
+                                localStorage.removeItem(
+                                  `lf_strategy_embedding_config_${ei.id}`
+                                )
+                                localStorage.removeItem(
+                                  `lf_strategy_embedding_model_${ei.id}`
+                                )
+                              } catch {}
                               let list = getEmbeddings().filter(
                                 x => x.id !== ei.id
                               )
@@ -758,26 +775,58 @@ function Rag() {
                               setMetaTick(t => t + 1)
                             }}
                           >
-                            Delete
+                            Remove
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
 
-                    <div className="text-sm font-medium">{ei.name}</div>
-                    <div className="text-xs text-primary text-left w-full truncate">
-                      {getEmbeddingDescription(ei.id)}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">
+                          {getEmbeddingProvider(ei.id) || 'Provider'}
+                        </div>
+                        <div className="text-base font-semibold font-mono truncate">
+                          {getEmbeddingSummary(ei.id)}
+                        </div>
+                        <div className="text-xs text-muted-foreground w-full truncate">
+                          {(() => {
+                            const loc = getEmbeddingLocation(ei.id)
+                            return loc ? loc : ''
+                          })()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap" />
                     </div>
-                    <div className="text-xs text-muted-foreground w-full truncate">
-                      {getEmbeddingProvider(ei.id) || 'Embedder'} •{' '}
-                      {getEmbeddingSummary(ei.id)}
-                      {(() => {
-                        const loc = getEmbeddingLocation(ei.id)
-                        return loc ? ` • ${loc}` : ''
-                      })()}
+                    <div className="text-xs text-muted-foreground truncate">
+                      {ei.name}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-between pt-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {(() => {
+                          const dim = getEmbeddingDimension(ei.id)
+                          return dim ? (
+                            <Badge
+                              variant="secondary"
+                              size="sm"
+                              className="rounded-xl"
+                            >
+                              {dim}-d
+                            </Badge>
+                          ) : null
+                        })()}
+                        {(() => {
+                          const runtime = getEmbeddingRuntime(ei.id)
+                          return runtime ? (
+                            <Badge
+                              variant="secondary"
+                              size="sm"
+                              className="rounded-xl"
+                            >
+                              {runtime}
+                            </Badge>
+                          ) : null
+                        })()}
                         {ei.isDefault ? (
                           <Badge
                             variant="default"
@@ -805,9 +854,14 @@ function Rag() {
                   </div>
                 ))}
               </div>
-              {/* Retrievals block */}
-              <div className="text-sm text-muted-foreground mt-3 mb-2">
-                Retrieval strategies ({retrievalCount})
+            </div>
+
+            {/* Retrievals card */}
+            <div className="rounded-lg border border-border bg-card p-4 pt-3 mt-3">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm text-foreground font-medium">
+                  Retrieval strategies ({retrievalCount})
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sortedRetrievals.map(ri => (
@@ -1168,6 +1222,49 @@ function Rag() {
               type="button"
             >
               Create
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Re-embed confirmation modal (after setting default embedding) */}
+      <Dialog open={reembedOpen} onOpenChange={setReembedOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-lg text-foreground">
+              Re-embed project data?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            To keep your project running smoothly, this change requires
+            re-embedding project data. Would you like to proceed now?
+          </div>
+          <DialogFooter>
+            <button
+              className="px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 text-sm"
+              onClick={() => {
+                setReembedOpen(false)
+                toast({
+                  message: 'Default strategy updated',
+                  variant: 'default',
+                })
+              }}
+              type="button"
+            >
+              I'll do it later
+            </button>
+            <button
+              className="px-3 py-2 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
+              onClick={() => {
+                setReembedOpen(false)
+                toast({
+                  message: 'Default strategy updated',
+                  variant: 'default',
+                })
+              }}
+              type="button"
+            >
+              Yes, proceed with re-embed
             </button>
           </DialogFooter>
         </DialogContent>
