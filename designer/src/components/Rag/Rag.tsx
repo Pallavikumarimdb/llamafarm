@@ -862,6 +862,13 @@ function Rag() {
                 <div className="text-sm text-foreground font-medium">
                   Retrieval strategies ({retrievalCount})
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/chat/rag/add-retrieval')}
+                >
+                  Add new
+                </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sortedRetrievals.map(ri => (

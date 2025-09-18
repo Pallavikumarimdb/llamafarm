@@ -25,6 +25,7 @@ function RetrievalMethod() {
   const navigate = useNavigate()
   const { strategyId } = useParams()
   const [mode, setMode] = useState<Mode>('designer')
+  const [defaultTick, setDefaultTick] = useState(0)
 
   const strategyName = useMemo(() => {
     if (!strategyId) return 'Strategy'
@@ -216,6 +217,44 @@ function RetrievalMethod() {
   const [hybCombination, setHybCombination] =
     useState<string>('weighted_average')
   const [hybFinalK, setHybFinalK] = useState<string>('10')
+
+  // Retrieval list helpers for default handling
+  const RET_LIST_KEY = 'lf_project_retrievals'
+  const getRetrievals = (): Array<{
+    id: string
+    name: string
+    isDefault: boolean
+    enabled: boolean
+  }> => {
+    try {
+      const raw = localStorage.getItem(RET_LIST_KEY)
+      const arr = raw ? JSON.parse(raw) : []
+      if (!Array.isArray(arr)) return []
+      return arr.filter(
+        (e: any) => e && typeof e.id === 'string' && typeof e.name === 'string'
+      )
+    } catch {
+      return []
+    }
+  }
+  const saveRetrievals = (
+    list: Array<{
+      id: string
+      name: string
+      isDefault: boolean
+      enabled: boolean
+    }>
+  ) => {
+    try {
+      localStorage.setItem(RET_LIST_KEY, JSON.stringify(list))
+    } catch {}
+  }
+  const setDefaultRetrieval = (id: string) => {
+    const list = getRetrievals()
+    const next = list.map(r => ({ ...r, isDefault: r.id === id }))
+    saveRetrievals(next)
+    setDefaultTick(t => t + 1)
+  }
 
   // Helpers for Hybrid sub-strategy config defaults and updates
   const getDefaultConfigForType = (
@@ -550,14 +589,16 @@ function RetrievalMethod() {
             RAG
           </button>
           <span className="text-muted-foreground px-1">/</span>
-          <span className="text-foreground">Retrieval method</span>
+          <span className="text-foreground">Edit retrieval strategy</span>
         </nav>
         <PageActions mode={mode} onModeChange={setMode} />
       </div>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg md:text-xl font-medium">Retrieval method</h2>
+        <h2 className="text-lg md:text-xl font-medium">
+          Edit retrieval strategy
+        </h2>
         <div className="flex items-center gap-2" />
       </div>
       {/* Strategy summary card */}
@@ -574,7 +615,30 @@ function RetrievalMethod() {
               {STRATEGY_DESCRIPTIONS[selectedStrategy]}
             </div>
           </div>
-          <div className="ml-3 shrink-0">
+          <div className="ml-3 shrink-0 flex items-center gap-3">
+            {strategyId
+              ? (() => {
+                  const list = getRetrievals()
+                  const found = list.find(r => r.id === strategyId)
+                  const isDefault = Boolean(found?.isDefault)
+                  const onlyOne = list.length <= 1
+                  return (
+                    <label className="inline-flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={isDefault}
+                        disabled={isDefault || onlyOne}
+                        onChange={e => {
+                          if (e.target.checked && strategyId) {
+                            setDefaultRetrieval(strategyId)
+                          }
+                        }}
+                      />
+                      <span>Make default</span>
+                    </label>
+                  )
+                })()
+              : null}
             <Button
               variant="outline"
               size="sm"
@@ -1479,7 +1543,11 @@ function RetrievalMethod() {
                   return (
                     <button
                       key={t}
-                      className={`text-left rounded-lg border border-border bg-card p-3 transition-colors ${
+                      className={`text-left rounded-lg border border-border bg-card transition-colors ${
+                        t === 'BasicSimilarityStrategy'
+                          ? 'pt-2 pb-3 px-3'
+                          : 'p-3'
+                      } ${
                         pendingStrategy === t ? 'ring-2 ring-teal-500' : ''
                       } ${isCurrent ? 'opacity-70 cursor-not-allowed' : 'hover:bg-accent/20'}`}
                       onClick={() => {

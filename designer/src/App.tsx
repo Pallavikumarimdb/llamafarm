@@ -22,6 +22,8 @@ import ChangeEmbeddingModel from './components/Rag/ChangeEmbeddingModel'
 import AddEmbeddingStrategy from './components/Rag/AddEmbeddingStrategy'
 // Removed legacy per-strategy pages in favor of unified StrategyView
 import RetrievalMethod from './components/Rag/RetrievalMethod'
+// @ts-ignore - component is TSX local file
+import AddRetrievalStrategy from './components/Rag/AddRetrievalStrategy'
 // Projects standalone page removed; Home now hosts projects section
 
 function ProjectModalRoot() {
@@ -62,6 +64,10 @@ function App() {
                 <Route
                   path="rag/add-embedding"
                   element={<AddEmbeddingStrategy />}
+                />
+                <Route
+                  path="rag/add-retrieval"
+                  element={<AddRetrievalStrategy />}
                 />
                 <Route path="rag/processing" element={<StrategyView />} />
                 <Route path="rag/:strategyId" element={<StrategyView />} />
