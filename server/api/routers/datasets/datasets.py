@@ -153,11 +153,25 @@ async def upload_data(
     return {"filename": file.filename, "hash": metadata_file_content.hash, "processed": False}
 
 
+class FileProcessingDetail(BaseModel):
+    hash: str
+    filename: str | None = None
+    status: str  # processed, skipped, failed
+    parser: str | None = None
+    extractors: list[str] | None = None
+    chunks: int | None = None
+    chunk_size: int | None = None
+    embedder: str | None = None
+    error: str | None = None
+    reason: str | None = None  # For skipped files (e.g., "duplicate")
+
 class ProcessDatasetResponse(BaseModel):
     processed_files: int
     skipped_files: int
     failed_files: int
-    details: list[dict]
+    strategy: str | None = None
+    database: str | None = None
+    details: list[FileProcessingDetail]
 
 
 @router.post("/{dataset}/process", response_model=ProcessDatasetResponse)
@@ -196,19 +210,47 @@ async def process_dataset(
     failed = 0
     details = []
     
+    import os
+    # Safely construct the raw data directory path and validate containment
+    raw_data_dir = os.path.normpath(os.path.join(project_dir, "lf_data", "raw"))
+    abs_raw_data_dir = os.path.abspath(raw_data_dir)
+    
+    # Validate that raw_data_dir is inside project_dir
+    abs_project_dir = os.path.abspath(project_dir)
+    if not abs_raw_data_dir.startswith(abs_project_dir + os.sep):
+        logger.error("Raw data directory path traversal attempt", raw_data_dir=raw_data_dir)
+        raise HTTPException(status_code=400, detail="Invalid raw data directory (security violation)")
+    
     for file_hash in dataset_config.files or []:
-        data_path = f"{project_dir}/lf_data/raw/{file_hash}"
+        # Safely construct and validate data path to prevent path traversal
+        data_path = os.path.normpath(os.path.join(raw_data_dir, file_hash))
+        abs_data_path = os.path.abspath(data_path)
+        
+        # Validate that the data path is within the raw_data_dir
+        if not abs_data_path.startswith(abs_raw_data_dir + os.sep):
+            logger.warning("Path traversal attempt detected", hash=file_hash, path=data_path)
+            failed += 1
+            details.append(FileProcessingDetail(
+                hash=file_hash,
+                filename=None,
+                status="failed",
+                error="Invalid file path (security violation)"
+            ))
+            continue
+        
+        # Use the validated absolute path for all operations
+        data_path = abs_data_path
         
         # Check if file exists
-        import os
         if not os.path.exists(data_path):
             logger.warning("File not found", hash=file_hash, path=data_path)
             failed += 1
-            details.append({
-                "hash": file_hash,
-                "status": "failed",
-                "error": "File not found"
-            })
+            details.append(FileProcessingDetail(
+                hash=file_hash,
+                filename=None,
+                status="failed",
+                error="File not found"
+            ))
             continue
         
         # Check if already processed (by checking if hash exists as document ID in vector store)
@@ -222,28 +264,71 @@ async def process_dataset(
             database=database_name,
         )
         
+        # Get metadata for the file to get filename
+        filename = None
+        file_size = 0
+        try:
+            from server.services.data_service import DataService
+            metadata = DataService.get_data_file_metadata_by_hash(
+                namespace=namespace,
+                project_id=project,
+                file_content_hash=file_hash,
+            )
+            filename = metadata.filename
+            # Get file size (data_path already validated above)
+            file_size = os.path.getsize(data_path)
+        except:
+            filename = os.path.basename(data_path)
+            # Get file size (data_path already validated above)
+            file_size = os.path.getsize(data_path)
+        
+        logger.info(f"Processing file: {filename} ({file_hash[:8]}...) - {file_size} bytes")
+        
         # Process the file
-        ok = ingest_file_with_rag(
+        ok, file_details = ingest_file_with_rag(
             project_dir=project_dir,
             project_config=project_obj.config,
             data_processing_strategy_name=data_processing_strategy_name,
             database_name=database_name,
             source_path=data_path,
+            filename=filename,
+            dataset_name=dataset,  # Pass dataset name for logging
         )
         
-        if ok:
+        # Determine actual status based on file_details
+        # Check multiple indicators for duplicates
+        is_duplicate = (
+            file_details.get("reason") == "duplicate" or
+            file_details.get("status") == "skipped" or
+            (file_details.get("stored_count", 0) == 0 and file_details.get("skipped_count", 0) > 0)
+        )
+        
+        if is_duplicate:
+            status = "skipped"
+            skipped += 1
+            logger.info(f"File {filename} marked as SKIPPED (duplicate)")
+        elif ok:
+            status = "processed"
             processed += 1
-            details.append({
-                "hash": file_hash,
-                "status": "processed"
-            })
         else:
+            status = "failed"
             failed += 1
-            details.append({
-                "hash": file_hash,
-                "status": "failed",
-                "error": "Ingestion failed"
-            })
+        
+        # Create detailed response
+        detail = FileProcessingDetail(
+            hash=file_hash,
+            filename=filename or file_details.get("filename"),
+            status=status,
+            parser=file_details.get("parser"),
+            extractors=file_details.get("extractors"),
+            chunks=file_details.get("chunks"),
+            chunk_size=file_details.get("chunk_size"),
+            embedder=file_details.get("embedder"),
+            error=file_details.get("error") if status == "failed" else None,
+            reason=file_details.get("reason")
+        )
+            
+        details.append(detail)
     
     logger.info(
         "Dataset processing complete",
@@ -253,12 +338,38 @@ async def process_dataset(
         failed=failed
     )
     
-    return ProcessDatasetResponse(
+    # Add log file location info
+    log_info = None
+    try:
+        import sys
+        import os
+        # Add rag module to path if needed
+        rag_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
+        if rag_path not in sys.path:
+            sys.path.insert(0, rag_path)
+        
+        from rag.core.processing_logger import ProcessingLogger
+        log_files = ProcessingLogger.get_latest_logs(project_dir, dataset)
+        if log_files:
+            log_info = f"Processing logs saved to: {log_files[0]}"
+            logger.info(log_info)
+    except Exception as e:
+        logger.debug(f"Could not get log info: {e}")
+    
+    response = ProcessDatasetResponse(
         processed_files=processed,
         skipped_files=skipped,
         failed_files=failed,
+        strategy=data_processing_strategy_name,
+        database=database_name,
         details=details
     )
+    
+    # Add log location to response summary if available
+    if log_info:
+        print(f"\n📝 {log_info}")
+    
+    return response
 
 
 @router.delete("/{dataset}/data/{file_hash}")

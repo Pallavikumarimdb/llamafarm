@@ -351,7 +351,17 @@ class BlobProcessor:
                 documents = parser.parse_blob(blob_data, metadata)
                 
                 if documents:
+                    # Calculate chunk statistics
+                    chunk_sizes = [len(doc.content) for doc in documents]
+                    avg_chunk_size = sum(chunk_sizes) // len(chunk_sizes) if chunk_sizes else 0
+                    
                     logger.info(f"Successfully parsed {filename} with {config['type']} - got {len(documents)} chunks")
+                    # Use debug level for detailed parser output
+                    logger.debug(f"\n📄 Parser Output: {config['type']}")
+                    logger.debug(f"   ├─ Chunks created: {len(documents)}")
+                    logger.debug(f"   ├─ Average chunk size: {avg_chunk_size} chars")
+                    logger.debug(f"   └─ Chunk sizes: min={min(chunk_sizes)}, max={max(chunk_sizes)}")
+                    
                     # Apply extractors to the documents
                     documents = self._apply_extractors(documents, filename)
                     break
@@ -412,18 +422,76 @@ class BlobProcessor:
         matching_extractors = self._find_matching_extractors(filename)
         
         # Apply each matching extractor
+        extractor_outputs = []
         for config, extractor in matching_extractors:
             try:
                 logger.debug(f"Applying extractor {config['type']} to {filename}")
+                
+                # Count metadata before extraction
+                before_keys = set()
+                for doc in documents:
+                    before_keys.update(doc.metadata.keys())
+                
                 # Extractors work on the list of documents
                 documents = extractor.extract(documents)
-                # Mark that this extractor was applied
+                
+                # Count metadata after extraction
+                after_keys = set()
+                extracted_data = {}
                 for doc in documents:
+                    after_keys.update(doc.metadata.keys())
+                    # Mark that this extractor was applied
                     doc.metadata[f"extractor_{config['type']}"] = True
+                
+                # Find what was extracted
+                new_keys = after_keys - before_keys - {f"extractor_{config['type']}"}
+                
+                # Count extracted items for specific extractors
+                extractor_type = config['type']
+                extraction_count = 0
+                
+                if 'keyword' in extractor_type.lower():
+                    for doc in documents:
+                        if 'keywords' in doc.metadata:
+                            extraction_count += len(doc.metadata.get('keywords', []))
+                elif 'entity' in extractor_type.lower():
+                    for doc in documents:
+                        if 'entities' in doc.metadata:
+                            extraction_count += len(doc.metadata.get('entities', []))
+                elif 'link' in extractor_type.lower():
+                    for doc in documents:
+                        if 'links' in doc.metadata:
+                            extraction_count += len(doc.metadata.get('links', []))
+                elif 'heading' in extractor_type.lower():
+                    for doc in documents:
+                        if 'headings' in doc.metadata:
+                            extraction_count += len(doc.metadata.get('headings', []))
+                elif 'table' in extractor_type.lower():
+                    for doc in documents:
+                        if 'tables' in doc.metadata:
+                            extraction_count += len(doc.metadata.get('tables', []))
+                
+                if extraction_count > 0 or new_keys:
+                    extractor_outputs.append({
+                        'name': config['type'],
+                        'count': extraction_count,
+                        'new_fields': list(new_keys)
+                    })
                     
             except Exception as e:
                 logger.warning(f"Extractor {config['type']} failed for {filename}: {e}")
                 continue
+        
+        # Log extractor outputs at debug level
+        if extractor_outputs:
+            logger.debug("\n🔍 Extractors Applied:")
+            for output in extractor_outputs:
+                if output['count'] > 0:
+                    logger.debug(f"   ├─ {output['name']}: extracted {output['count']} items")
+                elif output['new_fields']:
+                    logger.debug(f"   ├─ {output['name']}: added fields {output['new_fields']}")
+                else:
+                    logger.debug(f"   ├─ {output['name']}: applied")
         
         return documents
     

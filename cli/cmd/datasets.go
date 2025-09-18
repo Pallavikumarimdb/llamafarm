@@ -21,6 +21,7 @@ var (
 	configFile             string
 	dataProcessingStrategy string
 	database               string
+	verbose                bool
 )
 
 // datasetsCmd represents the datasets command
@@ -76,6 +77,9 @@ var datasetsListCmd = &cobra.Command{
 	Short:   "List all datasets on the server for the selected project",
 	Long:    `Lists datasets from the LlamaFarm server scoped by namespace/project.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Start config watcher for this command
+		StartConfigWatcherForCommand()
+
 		// Resolve server and routing
 		serverCfg, err := config.GetServerConfig(getEffectiveCWD(), serverURL, namespace, projectID)
 		if err != nil {
@@ -142,6 +146,9 @@ Examples:
   lf datasets add -s text_processing -b main_database my-pdfs ./pdfs/*.pdf`,
 	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		// Start config watcher for this command
+		StartConfigWatcherForCommand()
+
 		serverCfg, err := config.GetServerConfig(getEffectiveCWD(), serverURL, namespace, projectID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -239,6 +246,9 @@ var datasetsRemoveCmd = &cobra.Command{
 	Long:    `Deletes a dataset from the LlamaFarm server for the selected project.`,
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		// Start config watcher for this command
+		StartConfigWatcherForCommand()
+
 		serverCfg, err := config.GetServerConfig(getEffectiveCWD(), serverURL, namespace, projectID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -283,6 +293,9 @@ Examples:
   lf datasets ingest my-docs ./pdfs/*.pdf`,
 	Args: cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
+		// Start config watcher for this command
+		StartConfigWatcherForCommand()
+
 		serverCfg, err := config.GetServerConfig(getEffectiveCWD(), serverURL, namespace, projectID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -325,10 +338,13 @@ Examples:
 var datasetsProcessCmd = &cobra.Command{
 	Use:   "process [dataset-name]",
 	Short: "Process uploaded files into the vector database",
-	Long: `Process all uploaded files in the dataset into the vector database using the configured data processing strategy and embeddings.`,
+	Long:  `Process all uploaded files in the dataset into the vector database using the configured data processing strategy and embeddings.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		serverCfg, err := config.GetServerConfig(configFile, serverURL, namespace, projectID)
+		// Start config watcher for this command
+		StartConfigWatcherForCommand()
+
+		serverCfg, err := config.GetServerConfig(getEffectiveCWD(), serverURL, namespace, projectID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -342,9 +358,9 @@ var datasetsProcessCmd = &cobra.Command{
 		fmt.Printf("Processing dataset '%s'...\n", datasetName)
 
 		// Call the process endpoint
-		url := buildServerURL(serverCfg.URL, fmt.Sprintf("/v1/projects/%s/%s/datasets/%s/process", 
+		url := buildServerURL(serverCfg.URL, fmt.Sprintf("/v1/projects/%s/%s/datasets/%s/process",
 			serverCfg.Namespace, serverCfg.Project, datasetName))
-		
+
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating request: %v\n", err)
@@ -371,13 +387,22 @@ var datasetsProcessCmd = &cobra.Command{
 
 		// Parse response
 		var result struct {
-			ProcessedFiles int      `json:"processed_files"`
-			SkippedFiles   int      `json:"skipped_files"`
-			FailedFiles    int      `json:"failed_files"`
+			ProcessedFiles int    `json:"processed_files"`
+			SkippedFiles   int    `json:"skipped_files"`
+			FailedFiles    int    `json:"failed_files"`
+			Strategy       string `json:"strategy,omitempty"`
+			Database       string `json:"database,omitempty"`
 			Details        []struct {
-				Hash   string `json:"hash"`
-				Status string `json:"status"`
-				Error  string `json:"error,omitempty"`
+				Hash       string   `json:"hash"`
+				Filename   string   `json:"filename,omitempty"`
+				Status     string   `json:"status"`
+				Parser     string   `json:"parser,omitempty"`
+				Extractors []string `json:"extractors,omitempty"`
+				Chunks     *int     `json:"chunks,omitempty"`
+				ChunkSize  *int     `json:"chunk_size,omitempty"`
+				Embedder   string   `json:"embedder,omitempty"`
+				Error      string   `json:"error,omitempty"`
+				Reason     string   `json:"reason,omitempty"`
 			} `json:"details"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
@@ -385,24 +410,144 @@ var datasetsProcessCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Display results
-		fmt.Printf("✅ Processing complete:\n")
-		fmt.Printf("   • Processed: %d files\n", result.ProcessedFiles)
-		if result.SkippedFiles > 0 {
-			fmt.Printf("   • Skipped: %d files (already processed)\n", result.SkippedFiles)
+		// Display results - always show configuration
+		fmt.Printf("\n📊 Processing Configuration:\n")
+		if result.Strategy != "" {
+			fmt.Printf("   Strategy: %s\n", result.Strategy)
 		}
-		if result.FailedFiles > 0 {
-			fmt.Printf("   • Failed: %d files\n", result.FailedFiles)
-			for _, d := range result.Details {
-				if d.Status == "failed" && d.Error != "" {
-					fmt.Printf("     - %s: %s\n", d.Hash[:8], d.Error)
+		if result.Database != "" {
+			fmt.Printf("   Database: %s\n", result.Database)
+		}
+
+		// Always show detailed processing info
+		fmt.Printf("\n📁 File Processing Details:\n")
+		fmt.Printf("────────────────────────────────────────────────────────────────────────\n")
+		for i, d := range result.Details {
+			// Show both filename and hash for clarity
+			identifier := ""
+			if d.Filename != "" {
+				identifier = fmt.Sprintf("%s", d.Filename)
+				if len(d.Hash) > 12 {
+					identifier += fmt.Sprintf(" [%s...]", d.Hash[:12])
+				}
+			} else {
+				// Just show full hash if no filename
+				identifier = d.Hash
+			}
+
+			// Color-code status
+			statusDisplay := d.Status
+			statusBadge := ""
+			if d.Status == "processed" {
+				statusDisplay = "PROCESSED"
+				statusBadge = "✅"
+			} else if d.Status == "skipped" {
+				statusDisplay = "SKIPPED"
+				statusBadge = "⏭️"
+			} else if d.Status == "failed" {
+				statusDisplay = "FAILED"
+				statusBadge = "❌"
+			}
+
+			// File header with number, status badge, and identifier
+			fmt.Printf("\n   %s [%d] %s\n", statusBadge, i+1, identifier)
+			fmt.Printf("       ├─ Status: %s\n", statusDisplay)
+
+			if d.Status == "processed" {
+				// Parser information
+				if d.Parser != "" {
+					fmt.Printf("       ├─ Parser: %s\n", d.Parser)
+				}
+
+				// Chunks information - show more detail
+				if d.Chunks != nil {
+					chunkInfo := fmt.Sprintf("%d chunks created", *d.Chunks)
+					if d.ChunkSize != nil {
+						chunkInfo += fmt.Sprintf(" (target size: %d chars)", *d.ChunkSize)
+					}
+					fmt.Printf("       ├─ Chunking: %s\n", chunkInfo)
+				}
+
+				// Extractors - show count and types
+				if len(d.Extractors) > 0 {
+					fmt.Printf("       ├─ Extractors: %d applied\n", len(d.Extractors))
+					// Show first 3 extractors inline, rest on new lines
+					if len(d.Extractors) <= 3 {
+						fmt.Printf("       │   └─ %s\n", strings.Join(d.Extractors, ", "))
+					} else {
+						for j, ext := range d.Extractors {
+							if j < len(d.Extractors)-1 {
+								fmt.Printf("       │   ├─ %s\n", ext)
+							} else {
+								fmt.Printf("       │   └─ %s\n", ext)
+							}
+						}
+					}
+				}
+
+				// Embedder information
+				if d.Embedder != "" {
+					fmt.Printf("       └─ Embedder: %s\n", d.Embedder)
+				}
+			} else if d.Status == "skipped" {
+				if d.Reason == "duplicate" {
+					fmt.Printf("       ├─ Reason: All chunks already exist in database\n")
+					fmt.Printf("       └─ Action: No new data added (file previously processed)\n")
+				} else if d.Reason != "" {
+					fmt.Printf("       └─ Reason: %s\n", d.Reason)
+				}
+				// Still show what would have been used
+				if d.Parser != "" {
+					fmt.Printf("       Would use parser: %s\n", d.Parser)
+				}
+				if d.Embedder != "" {
+					fmt.Printf("       Would use embedder: %s\n", d.Embedder)
+				}
+			} else if d.Status == "failed" {
+				if d.Error != "" {
+					fmt.Printf("       Error: %s\n", d.Error)
 				}
 			}
+		}
+
+		// Summary with more context
+		fmt.Printf("\n────────────────────────────────────────────────────────────────────────\n")
+		totalFiles := result.ProcessedFiles + result.SkippedFiles + result.FailedFiles
+		if totalFiles == 0 {
+			fmt.Printf("\n⚠️  No files to process\n")
+		} else if result.FailedFiles > 0 {
+			fmt.Printf("\n⚠️  Processing Complete with Errors:\n")
+		} else if result.SkippedFiles == totalFiles {
+			fmt.Printf("\n✓ Processing Complete (All files already in database):\n")
+		} else {
+			fmt.Printf("\n✅ Processing Complete:\n")
+		}
+
+		fmt.Printf("   📊 Total files: %d\n", totalFiles)
+		if result.ProcessedFiles > 0 {
+			fmt.Printf("   ✅ Successfully processed: %d\n", result.ProcessedFiles)
+			// Calculate total chunks from details
+			totalChunks := 0
+			for _, d := range result.Details {
+				if d.Status == "processed" && d.Chunks != nil {
+					totalChunks += *d.Chunks
+				}
+			}
+			if totalChunks > 0 {
+				fmt.Printf("   📝 Total chunks created: %d\n", totalChunks)
+			}
+		}
+		if result.SkippedFiles > 0 {
+			fmt.Printf("   ⏭️  Skipped (duplicates): %d\n", result.SkippedFiles)
+		}
+		if result.FailedFiles > 0 {
+			fmt.Printf("   ❌ Failed: %d\n", result.FailedFiles)
 		}
 	},
 }
 
 func init() {
+
 	// Server routing flags (align with projects chat)
 	datasetsCmd.PersistentFlags().StringVar(&serverURL, "server-url", "", "LlamaFarm server URL (default: http://localhost:8000)")
 	datasetsCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "Project namespace (default: from llamafarm.yaml)")
