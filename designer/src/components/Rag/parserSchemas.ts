@@ -708,7 +708,8 @@ export function getDefaultConfigForParser(
     } else if (field.type === 'boolean') {
       cfg[key] = false
     } else if (field.type === 'integer' || field.type === 'number') {
-      cfg[key] = field.minimum ?? 0
+      // If nullable, honor null default; otherwise use minimum or 0
+      cfg[key] = field.nullable ? null : (field.minimum ?? 0)
     } else {
       cfg[key] = ''
     }

@@ -18,6 +18,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '../ui/dialog'
+import { getClientSideSecret } from '../../utils/crypto'
 
 // Helper for symmetric AES encryption (same as edit page)
 async function encryptAPIKey(apiKey: string, secret: string) {
@@ -922,15 +923,10 @@ function AddEmbeddingStrategy() {
                 <Label className="text-xs text-muted-foreground">API Key</Label>
                 <div className="relative">
                   <Input
-                    type="text"
+                    type={showApiKey ? 'text' : 'password'}
                     placeholder="enter here"
-                    value={
-                      showApiKey
-                        ? apiKey
-                        : '•'.repeat(Math.max(8, apiKey.length || 0))
-                    }
-                    readOnly={!showApiKey}
-                    onChange={e => showApiKey && setApiKey(e.target.value)}
+                    value={apiKey}
+                    onChange={e => setApiKey(e.target.value)}
                     className="h-9 pr-9"
                   />
                   <button
@@ -1025,10 +1021,16 @@ function AddEmbeddingStrategy() {
                     if (selected.runtime === 'Cloud' && apiKey.trim()) {
                       encryptedKey = await encryptAPIKey(
                         apiKey.trim(),
-                        name || 'default-project-secret'
+                        getClientSideSecret()
                       )
                     }
-                  } catch {}
+                  } catch (e) {
+                    toast({
+                      message: 'Failed to encrypt API key',
+                      variant: 'destructive',
+                    })
+                    return
+                  }
                   createStrategy(
                     selected.runtime,
                     summaryProvider || 'Provider',

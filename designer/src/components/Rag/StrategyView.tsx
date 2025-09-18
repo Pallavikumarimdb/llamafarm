@@ -99,6 +99,7 @@ function StrategyView() {
     priority: number
     applyTo: string
     summary: string
+    config?: Record<string, unknown>
   }
 
   // Map legacy high-number priorities to new low-number scale
@@ -510,6 +511,7 @@ function StrategyView() {
       priority: prio,
       applyTo: 'All files (*)',
       summary: '',
+      config: newExtractorConfig,
     }
     const rows = [...extractorRows, next]
     setExtractorRows(rows)
@@ -543,7 +545,9 @@ function StrategyView() {
     if (!found) return
     setEditExtractorId(found.id)
     setEditExtractorPriority(String(found.priority))
-    setEditExtractorConfig(getDefaultConfigForExtractor(found.name))
+    setEditExtractorConfig(
+      found.config || getDefaultConfigForExtractor(found.name)
+    )
     setIsEditExtractorOpen(true)
   }
   const handleUpdateExtractor = () => {
@@ -554,6 +558,7 @@ function StrategyView() {
         ? {
             ...e,
             priority: prio,
+            config: editExtractorConfig,
           }
         : e
     )
@@ -751,10 +756,18 @@ function StrategyView() {
                   key={row.id}
                   className="rounded-lg border border-border bg-card p-3 hover:bg-accent/20 transition-colors"
                 >
-                  <button
-                    className="w-full flex items-center gap-2 text-left"
+                  <div
+                    className="w-full flex items-center gap-2 text-left cursor-pointer"
                     onClick={() => toggleRow(row.id)}
                     aria-expanded={open}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggleRow(row.id)
+                      }
+                    }}
                   >
                     <ChevronDown
                       className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -770,7 +783,7 @@ function StrategyView() {
                     >
                       Priority: {row.priority}
                     </Badge>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 ml-auto">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -794,7 +807,7 @@ function StrategyView() {
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
-                  </button>
+                  </div>
                   {open ? (
                     <div className="mt-2 rounded-md border border-border bg-accent/10 p-2 text-sm">
                       <div className="text-muted-foreground">
@@ -825,10 +838,18 @@ function StrategyView() {
                   key={row.id}
                   className="rounded-lg border border-border bg-card p-3 hover:bg-accent/20 transition-colors"
                 >
-                  <button
-                    className="w-full flex items-center gap-2 text-left"
+                  <div
+                    className="w-full flex items-center gap-2 text-left cursor-pointer"
                     onClick={() => toggleRow(row.id)}
                     aria-expanded={open}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggleRow(row.id)
+                      }
+                    }}
                   >
                     <ChevronDown
                       className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -844,7 +865,7 @@ function StrategyView() {
                     >
                       Priority: {row.priority}
                     </Badge>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 ml-auto">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -868,7 +889,7 @@ function StrategyView() {
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
-                  </button>
+                  </div>
                   {open ? (
                     <div className="mt-2 rounded-md border border-border bg-accent/10 p-2 text-sm">
                       <div className="text-muted-foreground">

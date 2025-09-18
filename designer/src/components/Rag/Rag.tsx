@@ -15,6 +15,12 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import {
+  getStoredArray,
+  setStoredArray,
+  getStoredSet,
+  setStoredSet,
+} from '../../utils/storage'
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -60,58 +66,36 @@ function Rag() {
   const RET_LIST_KEY = 'lf_project_retrievals'
 
   const getEmbeddings = (): EmbeddingItem[] => {
-    try {
-      const raw = localStorage.getItem(EMB_LIST_KEY)
-      if (!raw) return []
-      const arr = JSON.parse(raw)
-      if (!Array.isArray(arr)) return []
-      return arr
-        .filter(
-          (e: any) =>
-            e && typeof e.id === 'string' && typeof e.name === 'string'
-        )
-        .map((e: any) => ({
-          id: e.id,
-          name: e.name,
-          isDefault: Boolean(e.isDefault),
-          enabled: typeof e.enabled === 'boolean' ? e.enabled : true,
-        }))
-    } catch {
-      return []
-    }
+    const arr = getStoredArray(EMB_LIST_KEY)
+    return arr
+      .filter(
+        (e: any) => e && typeof e.id === 'string' && typeof e.name === 'string'
+      )
+      .map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        isDefault: Boolean(e.isDefault),
+        enabled: typeof e.enabled === 'boolean' ? e.enabled : true,
+      })) as EmbeddingItem[]
   }
-  const saveEmbeddings = (list: EmbeddingItem[]) => {
-    try {
-      localStorage.setItem(EMB_LIST_KEY, JSON.stringify(list))
-    } catch {}
-  }
+  const saveEmbeddings = (list: EmbeddingItem[]) =>
+    setStoredArray(EMB_LIST_KEY, list)
 
   const getRetrievals = (): RetrievalItem[] => {
-    try {
-      const raw = localStorage.getItem(RET_LIST_KEY)
-      if (!raw) return []
-      const arr = JSON.parse(raw)
-      if (!Array.isArray(arr)) return []
-      return arr
-        .filter(
-          (e: any) =>
-            e && typeof e.id === 'string' && typeof e.name === 'string'
-        )
-        .map((e: any) => ({
-          id: e.id,
-          name: e.name,
-          isDefault: Boolean(e.isDefault),
-          enabled: typeof e.enabled === 'boolean' ? e.enabled : true,
-        }))
-    } catch {
-      return []
-    }
+    const arr = getStoredArray(RET_LIST_KEY)
+    return arr
+      .filter(
+        (e: any) => e && typeof e.id === 'string' && typeof e.name === 'string'
+      )
+      .map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        isDefault: Boolean(e.isDefault),
+        enabled: typeof e.enabled === 'boolean' ? e.enabled : true,
+      })) as RetrievalItem[]
   }
-  const saveRetrievals = (list: RetrievalItem[]) => {
-    try {
-      localStorage.setItem(RET_LIST_KEY, JSON.stringify(list))
-    } catch {}
-  }
+  const saveRetrievals = (list: RetrievalItem[]) =>
+    setStoredArray(RET_LIST_KEY, list)
 
   // Seed defaults once
   useEffect(() => {
@@ -227,21 +211,9 @@ function Rag() {
     saveCustomStrategies(list)
   }
   // const resetStrategies = () => { /* no-op in project-level layout */ }
-  const getDeletedSet = (): Set<string> => {
-    try {
-      const raw = localStorage.getItem('lf_strategy_deleted')
-      if (!raw) return new Set()
-      const arr = JSON.parse(raw) as string[]
-      return new Set(arr)
-    } catch {
-      return new Set()
-    }
-  }
-  const saveDeletedSet = (s: Set<string>) => {
-    try {
-      localStorage.setItem('lf_strategy_deleted', JSON.stringify(Array.from(s)))
-    } catch {}
-  }
+  const getDeletedSet = (): Set<string> => getStoredSet('lf_strategy_deleted')
+  const saveDeletedSet = (s: Set<string>) =>
+    setStoredSet('lf_strategy_deleted', s)
   const markDeleted = (id: string) => {
     const set = getDeletedSet()
     set.add(id)

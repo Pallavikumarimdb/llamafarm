@@ -14,6 +14,10 @@ import {
   DropdownMenuItem,
 } from '../ui/dropdown-menu'
 import {
+  getDefaultConfigForRetrieval,
+  parseWeightsList,
+} from '../../utils/retrievalUtils'
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -221,38 +225,7 @@ function RetrievalMethod() {
   // Helpers for Hybrid sub-strategy config defaults and updates
   const getDefaultConfigForType = (
     type: Exclude<StrategyType, 'HybridUniversalStrategy'>
-  ): Record<string, unknown> => {
-    switch (type) {
-      case 'BasicSimilarityStrategy':
-        return { top_k: 10, distance_metric: 'cosine', score_threshold: null }
-      case 'MetadataFilteredStrategy':
-        return {
-          top_k: 10,
-          filters: {},
-          filter_mode: 'pre',
-          fallback_multiplier: 3,
-        }
-      case 'MultiQueryStrategy':
-        return {
-          num_queries: 3,
-          top_k: 10,
-          aggregation_method: 'weighted',
-          query_weights: null,
-        }
-      case 'RerankedStrategy':
-        return {
-          initial_k: 30,
-          final_k: 10,
-          rerank_factors: {
-            similarity_weight: 0.7,
-            recency_weight: 0.1,
-            length_weight: 0.1,
-            metadata_weight: 0.1,
-          },
-          normalize_scores: true,
-        }
-    }
-  }
+  ): Record<string, unknown> => getDefaultConfigForRetrieval(type)
 
   const updateHybridSub = (index: number, partial: Partial<HybridSub>) => {
     setHybStrategies(prev => {
@@ -388,11 +361,7 @@ function RetrievalMethod() {
           fallback_multiplier: Number(mfFallbackMultiplier),
         }
       } else if (selectedStrategy === 'MultiQueryStrategy') {
-        const parts = mqQueryWeights
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean)
-        const weights = parts.length ? parts.map(p => Number(p)) : null
+        const weights = parseWeightsList(mqQueryWeights, Number(mqNumQueries))
         config = {
           num_queries: Number(mqNumQueries),
           top_k: Number(mqTopK),

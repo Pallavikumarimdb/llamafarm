@@ -22,6 +22,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from '../ui/dialog'
+import { getClientSideSecret } from '../../utils/crypto'
 
 // Helper for symmetric AES encryption using Web Crypto API
 async function encryptAPIKey(apiKey: string, secret: string) {
@@ -480,8 +481,11 @@ function ChangeEmbeddingModel() {
       apiKey.trim()
     ) {
       try {
-        encryptedKey = await encryptAPIKey(apiKey.trim(), strategyId)
-      } catch {}
+        encryptedKey = await encryptAPIKey(apiKey.trim(), getClientSideSecret())
+      } catch (e) {
+        toast({ message: 'Failed to encrypt API key', variant: 'destructive' })
+        return
+      }
     }
 
     const chosenModelId =
@@ -631,7 +635,11 @@ function ChangeEmbeddingModel() {
             <Input
               type="number"
               value={batchSize}
-              onChange={e => setBatchSize(Number(e.target.value || 16))}
+              onChange={e =>
+                setBatchSize(
+                  Math.min(512, Math.max(1, Number(e.target.value || 16)))
+                )
+              }
               className="h-9"
             />
           </div>
@@ -644,7 +652,11 @@ function ChangeEmbeddingModel() {
             <Input
               type="number"
               value={timeoutSec}
-              onChange={e => setTimeoutSec(Number(e.target.value || 60))}
+              onChange={e =>
+                setTimeoutSec(
+                  Math.min(600, Math.max(10, Number(e.target.value || 60)))
+                )
+              }
               className="h-9"
             />
           </div>
@@ -1032,15 +1044,10 @@ function ChangeEmbeddingModel() {
                   </Label>
                   <div className="relative">
                     <Input
-                      type="text"
+                      type={showApiKey ? 'text' : 'password'}
                       placeholder="enter here"
-                      value={
-                        showApiKey
-                          ? apiKey
-                          : '•'.repeat(Math.max(8, apiKey.length || 0))
-                      }
-                      readOnly={!showApiKey}
-                      onChange={e => showApiKey && setApiKey(e.target.value)}
+                      value={apiKey}
+                      onChange={e => setApiKey(e.target.value)}
                       className="h-9 pr-9"
                     />
                     <button

@@ -109,7 +109,9 @@ export default function ParserSettingsForm({
               }
               const num = Number(raw)
               if (!Number.isFinite(num)) return
-              let bounded = num
+              // Coerce integers to whole numbers
+              const coerced = field.type === 'integer' ? Math.trunc(num) : num
+              let bounded = coerced
               if (typeof min === 'number') bounded = Math.max(min, bounded)
               if (typeof max === 'number') bounded = Math.min(max, bounded)
               setField(key, bounded)
