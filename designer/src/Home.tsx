@@ -301,7 +301,7 @@ function Home() {
         id="resources"
         className="w-full max-w-6xl mx-auto px-6 mt-20 lg:mt-28"
       >
-        <h3 className="text-xl text-white mb-4">Resources</h3>
+        <h3 className="text-xl text-primary mb-4">Resources</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <a
             href="https://github.com/llama-farm/llamafarm"
