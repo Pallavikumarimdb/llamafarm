@@ -65,7 +65,13 @@ function SampleProjects() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     let base = term
-      ? sampleProjects.filter(p => p.title.toLowerCase().includes(term))
+      ? sampleProjects.filter(p => {
+          const inTitle = p.title.toLowerCase().includes(term)
+          const inTags = (p.tags || []).some(t =>
+            t.toLowerCase().includes(term)
+          )
+          return inTitle || inTags
+        })
       : sampleProjects
 
     if (modelFilter !== 'all') {
@@ -142,7 +148,7 @@ function SampleProjects() {
           <FontIcon type="search" className="w-4 h-4 text-foreground" />
           <input
             className="w-full bg-transparent border-none focus:outline-none px-2 text-sm text-foreground"
-            placeholder="Search projects"
+            placeholder="Search projects or tags (e.g. maintenance)"
             value={search}
             onChange={e => setSearch(e.target.value)}
             aria-label="Search sample projects"
