@@ -370,6 +370,91 @@ function StrategyView() {
     return shown
   }
 
+  const getFriendlyParserName = (parserName: string): string => {
+    switch (parserName) {
+      case 'PDFParser_LlamaIndex':
+        return 'PDF Document Parser'
+      case 'PDFParser_PyPDF2':
+        return 'PDF Parser (PyPDF2)'
+      case 'DocxParser_LlamaIndex':
+      case 'Docx Parser Llama Index':
+        return 'Word Document Parser'
+      case 'DocxParser_PythonDocx':
+      case 'Docx Parser Python Docx':
+        return 'Word Document Parser (Alternative)'
+      case 'MarkdownParser_Python':
+        return 'Markdown Parser (Basic)'
+      case 'MarkdownParser_LlamaIndex':
+      case 'Markdown Parser Llama Index':
+        return 'Markdown Parser (LlamaIndex)'
+      case 'CSVParser_Pandas':
+        return 'CSV Data Parser'
+      case 'CSVParser_LlamaIndex':
+      case 'CSVParser Llama Index':
+        return 'CSV Data Parser (LlamaIndex)'
+      case 'ExcelParser_Pandas':
+      case 'ExcelParser_LlamaIndex':
+      case 'Excel Parser Llama Index':
+        return 'Excel Spreadsheet Parser (LlamaIndex)'
+      case 'ExcelParser_OpenPyXL':
+      case 'Excel Parser Open Py XL':
+        return 'Excel Spreadsheet Parser (OpenPyXL)'
+      case 'TextParser_Python':
+        return 'Plain Text Parser'
+      case 'TextParser_LlamaIndex':
+      case 'Text Parser Llama Index':
+        return 'Plain Text Parser (LlamaIndex)'
+      default: {
+        // Sensible fallback: split by underscores/camelcase
+        try {
+          const spaced = parserName
+            .replace(/_/g, ' ')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+          return spaced.trim()
+        } catch {
+          return parserName
+        }
+      }
+    }
+  }
+
+  const getFriendlyExtractorName = (name: string): string => {
+    switch (name) {
+      case 'ContentStatisticsExtractor':
+        return 'Content Statistics Extractor'
+      case 'EntityExtractor':
+        return 'Entity Extractor'
+      case 'KeywordExtractor':
+        return 'Keyword Extractor'
+      case 'TableExtractor':
+        return 'Table Extractor'
+      case 'DateTimeExtractor':
+        return 'Date & Time Extractor'
+      case 'PatternExtractor':
+        return 'Pattern Extractor'
+      case 'HeadingExtractor':
+        return 'Heading Extractor'
+      case 'LinkExtractor':
+        return 'Link Extractor'
+      case 'SummaryExtractor':
+        return 'Text Summary Extractor'
+      case 'TextSummaryExtractor':
+        return 'Text Summary Extractor (Alternative)'
+      case 'StatisticsExtractor':
+        return 'Text Statistics Extractor'
+      case 'YAKEExtractor':
+        return 'YAKE Keyword Extractor'
+      case 'SentimentExtractor':
+        return 'Sentiment Analysis Extractor'
+      default:
+        try {
+          return name.replace(/([a-z])([A-Z])/g, '$1 $2').trim()
+        } catch {
+          return name
+        }
+    }
+  }
+
   const getPriorityVariant = (
     p: number
   ): 'default' | 'secondary' | 'outline' => {
@@ -772,14 +857,21 @@ function StrategyView() {
                     <ChevronDown
                       className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
                     />
-                    <div className="flex-1 text-sm font-medium">{row.name}</div>
-                    <div className="hidden md:block text-xs text-muted-foreground mr-4">
-                      {summarizeFileTypes(row.include)}
+                    <div className="text-sm font-medium w-[280px] max-w-[38vw] truncate">
+                      {getFriendlyParserName(row.name)}
+                    </div>
+                    <div className="hidden md:block flex-1 min-w-[220px] text-left pr-4">
+                      <span className="text-sm text-muted-foreground">
+                        Good for:
+                      </span>{' '}
+                      <span className="text-sm font-medium text-foreground align-bottom whitespace-normal break-words">
+                        {summarizeFileTypes(row.include) || '—'}
+                      </span>
                     </div>
                     <Badge
                       variant={getPriorityVariant(row.priority)}
                       size="sm"
-                      className="rounded-xl mr-2"
+                      className="rounded-xl mr-2 ml-6"
                     >
                       Priority: {row.priority}
                     </Badge>
@@ -810,6 +902,12 @@ function StrategyView() {
                   </div>
                   {open ? (
                     <div className="mt-2 rounded-md border border-border bg-accent/10 p-2 text-sm">
+                      <div className="text-muted-foreground">
+                        <span className="font-medium text-foreground">
+                          Parser type:
+                        </span>{' '}
+                        {row.name}
+                      </div>
                       <div className="text-muted-foreground">
                         <span className="font-medium text-foreground">
                           Include:
@@ -854,14 +952,21 @@ function StrategyView() {
                     <ChevronDown
                       className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`}
                     />
-                    <div className="flex-1 text-sm font-medium">{row.name}</div>
-                    <div className="hidden md:block text-xs text-muted-foreground mr-4">
-                      {row.applyTo || 'All (*)'}
+                    <div className="text-sm font-medium w-[280px] max-w-[38vw] truncate">
+                      {getFriendlyExtractorName(row.name)}
+                    </div>
+                    <div className="hidden md:block flex-1 min-w-[220px] text-left pr-4">
+                      <span className="text-sm text-muted-foreground">
+                        Applies to:
+                      </span>{' '}
+                      <span className="text-sm font-medium text-foreground whitespace-normal break-words">
+                        {row.applyTo || 'All (*)'}
+                      </span>
                     </div>
                     <Badge
                       variant={getPriorityVariant(row.priority)}
                       size="sm"
-                      className="rounded-xl mr-2"
+                      className="rounded-xl mr-2 ml-6"
                     >
                       Priority: {row.priority}
                     </Badge>
@@ -910,6 +1015,20 @@ function StrategyView() {
         )}
       </section>
 
+      {activeTab === 'parsers' ? (
+        <div className="mt-2 text-sm text-muted-foreground">
+          Parsers convert different file formats (PDF, Word, Excel, etc.) into
+          text that AI systems can read and understand.
+        </div>
+      ) : null}
+      {activeTab === 'extractors' ? (
+        <div className="mt-2 text-sm text-muted-foreground">
+          Extractors pull out specific types of information (like dates, names,
+          tables, or keywords) from the parsed text to make it more useful for
+          AI retrieval and analysis.
+        </div>
+      ) : null}
+
       {/* Add Parser Modal */}
       <Dialog open={isAddParserOpen} onOpenChange={setIsAddParserOpen}>
         <DialogContent className="sm:max-w-xl p-0">
@@ -944,9 +1063,11 @@ function StrategyView() {
                             variant="outline"
                             className="w-full justify-between"
                           >
-                            {newParserType ||
-                              available[0] ||
-                              'No parsers available'}
+                            {newParserType
+                              ? getFriendlyParserName(newParserType)
+                              : available[0]
+                                ? getFriendlyParserName(available[0])
+                                : 'No parsers available'}
                             <ChevronDown className="w-4 h-4 ml-2 opacity-70" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -966,7 +1087,7 @@ function StrategyView() {
                                   )
                                 }}
                               >
-                                {t}
+                                {getFriendlyParserName(t)}
                               </DropdownMenuItem>
                             ))
                           )}
@@ -1183,9 +1304,11 @@ function StrategyView() {
                             variant="outline"
                             className="w-full justify-between"
                           >
-                            {newExtractorType ||
-                              available[0] ||
-                              'No extractors available'}
+                            {newExtractorType
+                              ? getFriendlyExtractorName(newExtractorType)
+                              : available[0]
+                                ? getFriendlyExtractorName(available[0])
+                                : 'No extractors available'}
                             <ChevronDown className="w-4 h-4 ml-2 opacity-70" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -1205,7 +1328,7 @@ function StrategyView() {
                                   )
                                 }}
                               >
-                                {t}
+                                {getFriendlyExtractorName(t)}
                               </DropdownMenuItem>
                             ))
                           )}
