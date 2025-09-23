@@ -40,9 +40,42 @@ export async function createDataset(
   project: string,
   request: CreateDatasetRequest
 ): Promise<CreateDatasetResponse> {
+  // The server expects { name, data_processing_strategy, database }
+  // while the current UI passes { name, rag_strategy }. Translate here and
+  // pick a valid database/strategy from the server when available.
+  let data_processing_strategy: string =
+    (request as any).rag_strategy || 'default'
+  let database: string = 'default'
+
+  try {
+    const strategiesResp = await apiClient.get(
+      `/projects/${encodeURIComponent(namespace)}/${encodeURIComponent(project)}/datasets/strategies`
+    )
+    const strategies: string[] =
+      strategiesResp.data?.data_processing_strategies || []
+    const databases: string[] = strategiesResp.data?.databases || []
+
+    if (strategies.length > 0) {
+      if (!strategies.includes(data_processing_strategy)) {
+        data_processing_strategy = strategies[0]
+      }
+    }
+    if (databases.length > 0) {
+      database = databases[0]
+    }
+  } catch {
+    // Fallback to defaults above if strategies endpoint is unavailable
+  }
+
+  const serverPayload = {
+    name: request.name,
+    data_processing_strategy,
+    database,
+  }
+
   const response = await apiClient.post<CreateDatasetResponse>(
     `/projects/${encodeURIComponent(namespace)}/${encodeURIComponent(project)}/datasets/`,
-    request
+    serverPayload
   )
   return response.data
 }
@@ -137,7 +170,9 @@ export async function deleteFileFromDataset(
   }
 
   const url = `/projects/${encodeURIComponent(namespace)}/${encodeURIComponent(project)}/datasets/${encodeURIComponent(dataset)}/data/${encodeURIComponent(fileHash)}`
-  const fullUrl = queryParams.toString() ? `${url}?${queryParams.toString()}` : url
+  const fullUrl = queryParams.toString()
+    ? `${url}?${queryParams.toString()}`
+    : url
 
   const response = await apiClient.delete<FileDeleteResponse>(fullUrl)
   return response.data
@@ -200,7 +235,9 @@ export async function deleteDatasetFile(
   }
 
   const url = `/projects/${encodeURIComponent(namespace)}/${encodeURIComponent(project)}/datasets/${encodeURIComponent(dataset)}/data/${encodeURIComponent(fileHash)}`
-  const fullUrl = queryParams.toString() ? `${url}?${queryParams.toString()}` : url
+  const fullUrl = queryParams.toString()
+    ? `${url}?${queryParams.toString()}`
+    : url
 
   const response = await apiClient.delete<FileDeleteResponse>(fullUrl)
   return response.data

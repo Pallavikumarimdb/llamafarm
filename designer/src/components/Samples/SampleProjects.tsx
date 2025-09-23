@@ -31,6 +31,21 @@ function SampleProjects() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [modelFilter, setModelFilter] = useState<'all' | string>('all')
 
+  // Cycle sort: first click desc, second asc, third off
+  const cycleSort = (key: 'projectSize' | 'dataSize') => {
+    if (sortKey !== key) {
+      setSortKey(key)
+      setSortDir('desc')
+      return
+    }
+    if (sortDir === 'desc') {
+      setSortDir('asc')
+    } else {
+      setSortKey('')
+      setSortDir('desc')
+    }
+  }
+
   const sizeToBytes = (v?: string): number => {
     if (!v) return 0
     const match = v.trim().match(/([0-9]+(?:\.[0-9]+)?)\s*(KB|MB|GB|TB)/i)
@@ -143,14 +158,7 @@ function SampleProjects() {
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-background text-foreground border-input hover:bg-accent/30'
               }`}
-              onClick={() => {
-                if (sortKey === 'projectSize') {
-                  setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-                } else {
-                  setSortKey('projectSize')
-                  setSortDir('desc')
-                }
-              }}
+              onClick={() => cycleSort('projectSize')}
             >
               <span>Project size</span>
               <FontIcon
@@ -169,14 +177,7 @@ function SampleProjects() {
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-background text-foreground border-input hover:bg-accent/30'
               }`}
-              onClick={() => {
-                if (sortKey === 'dataSize') {
-                  setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-                } else {
-                  setSortKey('dataSize')
-                  setSortDir('desc')
-                }
-              }}
+              onClick={() => cycleSort('dataSize')}
             >
               <span>Data size</span>
               <FontIcon

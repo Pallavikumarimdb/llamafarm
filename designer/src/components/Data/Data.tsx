@@ -19,6 +19,7 @@ import {
   DialogClose,
 } from '../ui/dialog'
 import { Button } from '../ui/button'
+import ImportSampleDatasetModal from './ImportSampleDatasetModal'
 import PageActions from '../common/PageActions'
 import { Input } from '../ui/input'
 import { Textarea } from '../ui/textarea'
@@ -68,10 +69,13 @@ const Data = () => {
   const createDatasetMutation = useCreateDataset()
   const deleteDatasetMutation = useDeleteDataset()
 
+  // Local demo datasets change counter (forces recompute when we mutate localStorage)
+  const [localDatasetsVersion, setLocalDatasetsVersion] = useState(0)
+
   // Convert API datasets to UI format; provide demo fallback if none
   const datasets = useMemo(() => {
     if (apiDatasets?.datasets && apiDatasets.datasets.length > 0) {
-      return apiDatasets.datasets.map(dataset => ({
+      const apiList = apiDatasets.datasets.map(dataset => ({
         id: dataset.name,
         name: dataset.name,
         rag_strategy: dataset.rag_strategy,
@@ -80,12 +84,41 @@ const Data = () => {
         embedModel: 'text-embedding-3-large',
         // Estimate chunk count numerically for display
         numChunks: Array.isArray(dataset.files)
-          ? Math.max(0, dataset.files.length * 100)
+          ? Math.max(
+              0,
+              (Array.isArray(dataset.files) ? dataset.files.length : 0) * 100
+            )
           : 0,
         processedPercent: 100,
         version: 'v1',
         description: '',
       }))
+
+      // Merge any locally created demo datasets (e.g., offline imports) without duplicating API items
+      try {
+        const stored = localStorage.getItem('lf_demo_datasets')
+        const localArr: any[] = stored ? JSON.parse(stored) : []
+        const apiIds = new Set(apiList.map(d => d.id))
+        const localAsUi = Array.isArray(localArr)
+          ? localArr
+              .filter(d => !apiIds.has(d.id))
+              .map(d => ({
+                id: d.id,
+                name: d.name,
+                rag_strategy: d.rag_strategy || 'default',
+                files: d.files || [],
+                lastRun: new Date(d.lastRun || Date.now()),
+                embedModel: d.embedModel || 'text-embedding-3-large',
+                numChunks: d.numChunks ?? 0,
+                processedPercent: d.processedPercent ?? 0,
+                version: d.version || 'v1',
+                description: d.description || 'Local dataset',
+              }))
+          : []
+        return [...apiList, ...localAsUi]
+      } catch {
+        return apiList
+      }
     }
 
     // Demo fallback datasets to populate the grid when API has none
@@ -127,7 +160,7 @@ const Data = () => {
       localStorage.setItem('lf_demo_datasets', JSON.stringify(demo))
     } catch {}
     return demo
-  }, [apiDatasets])
+  }, [apiDatasets, localDatasetsVersion])
 
   // Map of fileKey -> array of dataset ids
   const [fileAssignments] = useState<Record<string, string[]>>(() => {
@@ -161,6 +194,7 @@ const Data = () => {
 
   // Create dataset dialog state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
   const [newDatasetName, setNewDatasetName] = useState('')
   const [newDatasetDescription, setNewDatasetDescription] = useState('')
 
@@ -169,6 +203,9 @@ const Data = () => {
   const [editDatasetId, setEditDatasetId] = useState<string>('')
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string>('')
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string>('')
 
   const handleCreateDataset = async () => {
     const name = newDatasetName.trim()
@@ -300,6 +337,13 @@ const Data = () => {
           <div className="mb-2 flex flex-row gap-2 justify-between items-end flex-shrink-0">
             <div>Datasets</div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsImportOpen(true)}
+              >
+                Import sample dataset
+              </Button>
               <Dialog
                 open={isCreateOpen}
                 onOpenChange={open => {
@@ -310,7 +354,7 @@ const Data = () => {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button variant="secondary" size="sm">
+                  <Button variant="default" size="sm">
                     Create new
                   </Button>
                 </DialogTrigger>
@@ -389,137 +433,242 @@ const Data = () => {
                 </div>
                 <p className="max-w-[527px] text-sm text-muted-foreground text-center mb-10">
                   You can upload PDFs, explore various list formats, or draw
-                  inspiration from other data sources to enhance your project with
-                  LlaMaFarm.
+                  inspiration from other data sources to enhance your project
+                  with LlaMaFarm.
                 </p>
               </div>
             ) : (
               <div>
-            {mode === 'designer' && isDatasetsLoading ? (
-              <div className="w-full mb-6 flex items-center justify-center rounded-lg py-4 text-primary text-center bg-primary/10">
-                <Loader size={32} className="mr-2" />
-                Loading datasets...
-              </div>
-            ) : mode === 'designer' && datasets.length <= 0 ? (
-              <div className="w-full mb-6 flex items-center justify-center rounded-lg py-4 text-primary text-center bg-primary/10">
-                {datasetsError
-                  ? 'Unable to load datasets. Using local storage.'
-                  : 'No datasets found. Create one to get started.'}
-              </div>
-            ) : (
-              mode === 'designer' && (
-                <div className="grid grid-cols-2 gap-2 mb-6">
-                  {datasets.map(ds => (
-                    <div
-                      key={ds.id}
-                      className="w-full bg-card rounded-lg border border-border flex flex-col gap-3 p-4 relative hover:bg-accent/20 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/chat/data/${ds.id}`)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigate(`/chat/data/${ds.id}`)
-                        }
-                      }}
-                    >
-                      <div className="absolute right-3 top-3">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
-                              onClick={e => e.stopPropagation()}
-                              aria-label="Dataset actions"
-                            >
-                              <FontIcon type="overflow" className="w-4 h-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            className="min-w-[10rem] w-[10rem]"
-                          >
-                            <DropdownMenuItem
-                              onClick={e => {
-                                e.stopPropagation()
-                                // open simple edit modal
-                                setEditDatasetId(ds.id)
-                                setEditName(ds.name)
-                                setEditDescription(ds.description || '')
-                                setIsEditOpen(true)
-                              }}
-                            >
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={e => {
-                                e.stopPropagation()
-                                navigate(`/chat/data/${ds.id}`)
-                              }}
-                            >
-                              View
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={async e => {
-                                e.stopPropagation()
-                                if (
-                                  !activeProject?.namespace ||
-                                  !activeProject?.project
-                                )
-                                  return
-                                try {
-                                  await deleteDatasetMutation.mutateAsync({
-                                    namespace: activeProject.namespace,
-                                    project: activeProject.project,
-                                    dataset: ds.id,
-                                  })
-                                  toast({
-                                    message: 'Dataset deleted',
-                                    variant: 'default',
-                                  })
-                                } catch (err) {
-                                  console.error('Delete failed', err)
-                                  toast({
-                                    message: 'Failed to delete dataset',
-                                    variant: 'destructive',
-                                  })
-                                }
-                              }}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="text-sm font-medium">{ds.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Last run on {formatLastRun(ds.lastRun)}
-                      </div>
-                      <div className="flex flex-row gap-2 items-center">
-                        <Badge
-                          variant="default"
-                          size="sm"
-                          className="rounded-xl"
+                {mode === 'designer' && isDatasetsLoading ? (
+                  <div className="w-full mb-6 flex items-center justify-center rounded-lg py-4 text-primary text-center bg-primary/10">
+                    <Loader size={32} className="mr-2" />
+                    Loading datasets...
+                  </div>
+                ) : mode === 'designer' && datasets.length <= 0 ? (
+                  <div className="w-full mb-6 flex items-center justify-center rounded-lg py-4 text-primary text-center bg-primary/10">
+                    {datasetsError
+                      ? 'Unable to load datasets. Using local storage.'
+                      : 'No datasets found. Create one to get started.'}
+                  </div>
+                ) : (
+                  mode === 'designer' && (
+                    <div className="grid grid-cols-2 gap-2 mb-6">
+                      {datasets.map(ds => (
+                        <div
+                          key={ds.id}
+                          className="w-full bg-card rounded-lg border border-border flex flex-col gap-3 p-4 relative hover:bg-accent/20 cursor-pointer transition-colors"
+                          onClick={() => navigate(`/chat/data/${ds.id}`)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              navigate(`/chat/data/${ds.id}`)
+                            }
+                          }}
                         >
-                          {ds.embedModel}
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {ds.numChunks.toLocaleString()} chunks •{' '}
-                        {ds.processedPercent}% processed • {ds.version}
-                      </div>
+                          <div className="absolute right-3 top-3">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
+                                  onClick={e => e.stopPropagation()}
+                                  aria-label="Dataset actions"
+                                >
+                                  <FontIcon
+                                    type="overflow"
+                                    className="w-4 h-4"
+                                  />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-[10rem] w-[10rem]"
+                              >
+                                <DropdownMenuItem
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    // open simple edit modal
+                                    setEditDatasetId(ds.id)
+                                    setEditName(ds.name)
+                                    setEditDescription(ds.description || '')
+                                    setIsEditOpen(true)
+                                  }}
+                                >
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    navigate(`/chat/data/${ds.id}`)
+                                  }}
+                                >
+                                  View
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setConfirmDeleteId(ds.id)
+                                    setConfirmDeleteName(ds.name)
+                                    setIsConfirmDeleteOpen(true)
+                                  }}
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          <div className="text-sm font-medium">{ds.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Last run on {formatLastRun(ds.lastRun)}
+                          </div>
+                          <div className="flex flex-row gap-2 items-center">
+                            <Badge
+                              variant="default"
+                              size="sm"
+                              className="rounded-xl"
+                            >
+                              {ds.embedModel}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {ds.numChunks.toLocaleString()} chunks •{' '}
+                            {ds.processedPercent}% processed • {ds.version}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )
-            )}
+                  )
+                )}
 
-            {/* Project-level raw files UI removed: files now only exist within datasets. */}
+                {/* Project-level raw files UI removed: files now only exist within datasets. */}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Edit dataset dialog */}
+      <ImportSampleDatasetModal
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImport={async ({ name, rag_strategy }) => {
+          try {
+            if (!activeProject?.namespace || !activeProject?.project) {
+              toast({
+                message: 'No active project selected',
+                variant: 'destructive',
+              })
+              return
+            }
+            await createDatasetMutation.mutateAsync({
+              namespace: activeProject.namespace,
+              project: activeProject.project,
+              name,
+              rag_strategy,
+            })
+            toast({ message: `Dataset "${name}" imported`, variant: 'default' })
+            setIsImportOpen(false)
+            navigate(`/chat/data/${name}`)
+          } catch (error) {
+            console.error('Import failed', error)
+            // Local fallback to make import work without server: persist into demo datasets
+            try {
+              const raw = localStorage.getItem('lf_demo_datasets')
+              const arr = raw ? JSON.parse(raw) : []
+              const newEntry = {
+                id: name,
+                name,
+                rag_strategy: rag_strategy || 'default',
+                files: [],
+                lastRun: new Date(),
+                embedModel: 'text-embedding-3-large',
+                numChunks: 0,
+                processedPercent: 0,
+                version: 'v1',
+                description: 'Imported sample dataset (local)',
+              }
+              const exists =
+                Array.isArray(arr) && arr.some((d: any) => d.id === name)
+              const updated = exists ? arr : [...arr, newEntry]
+              localStorage.setItem('lf_demo_datasets', JSON.stringify(updated))
+              setIsImportOpen(false)
+              toast({
+                message: `Dataset "${name}" imported (local)`,
+                variant: 'default',
+              })
+              navigate('/chat/data')
+            } catch {
+              toast({
+                message: 'Failed to import dataset',
+                variant: 'destructive',
+              })
+            }
+          }
+        }}
+      />
+
+      {/* Edit dataset dialog */}
+      <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete dataset</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            Are you sure you want to delete this{' '}
+            {confirmDeleteName ? `"${confirmDeleteName}"` : 'dataset'}?
+          </div>
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="secondary">Cancel</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                const id = confirmDeleteId
+                setIsConfirmDeleteOpen(false)
+                if (!id) return
+                if (!activeProject?.namespace || !activeProject?.project) return
+                try {
+                  await deleteDatasetMutation.mutateAsync({
+                    namespace: activeProject.namespace,
+                    project: activeProject.project,
+                    dataset: id,
+                  })
+                  toast({ message: 'Dataset deleted', variant: 'default' })
+                } catch (err) {
+                  console.error('Delete failed', err)
+                  // Local fallback removal
+                  try {
+                    const raw = localStorage.getItem('lf_demo_datasets')
+                    const arr = raw ? JSON.parse(raw) : []
+                    const updated = Array.isArray(arr)
+                      ? arr.filter((d: any) => d.id !== id)
+                      : []
+                    localStorage.setItem(
+                      'lf_demo_datasets',
+                      JSON.stringify(updated)
+                    )
+                    setLocalDatasetsVersion(v => v + 1)
+                    toast({
+                      message: 'Dataset deleted (local)',
+                      variant: 'default',
+                    })
+                  } catch {
+                    toast({
+                      message: 'Failed to delete dataset',
+                      variant: 'destructive',
+                    })
+                  }
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit dataset dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
