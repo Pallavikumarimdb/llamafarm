@@ -26,6 +26,15 @@ export default function ExtractorSettingsForm({
 }: Props) {
   const entries = useMemo(() => Object.entries(schema.properties), [schema])
 
+  const toSentenceCase = (s: string) => {
+    const spaced = s
+      .replace(/_/g, ' ')
+      .replace(/\b([A-Z])/g, ' $1')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+  }
+
   const setField = (key: string, nextVal: unknown) => {
     const next = { ...value, [key]: nextVal }
     onChange(next)
@@ -35,9 +44,7 @@ export default function ExtractorSettingsForm({
     const arr = Array.isArray(value[key]) ? (value[key] as any[]) : []
     return (
       <div key={key} className="flex flex-col gap-2">
-        <Label className="text-xs text-muted-foreground">
-          {key.replace(/_/g, ' ')}
-        </Label>
+        <Label className="text-xs text-foreground">{toSentenceCase(key)}</Label>
         {arr.map((row, idx) => (
           <div key={idx} className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <Input
@@ -101,14 +108,14 @@ export default function ExtractorSettingsForm({
 
   const renderField = (key: string, field: SchemaField) => {
     const current = value[key]
-    const label = key.replace(/_/g, ' ')
+    const label = toSentenceCase(key)
 
     if (field.type === 'boolean') {
       const checked = Boolean(current ?? field.default ?? false)
       return (
         <div key={key} className="flex items-center justify-between py-2">
           <div className="flex flex-col">
-            <Label className="text-xs text-muted-foreground">{label}</Label>
+            <Label className="text-xs text-foreground">{label}</Label>
             {field.description ? (
               <div className="text-xs text-muted-foreground">
                 {field.description}
@@ -128,7 +135,7 @@ export default function ExtractorSettingsForm({
       const currentVal = (current as string) ?? (field.default as string) ?? ''
       return (
         <div key={key} className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{label}</Label>
+          <Label className="text-xs text-foreground">{label}</Label>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -164,7 +171,7 @@ export default function ExtractorSettingsForm({
       const max = typeof field.maximum === 'number' ? field.maximum : undefined
       return (
         <div key={key} className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{label}</Label>
+          <Label className="text-xs text-foreground">{label}</Label>
           <Input
             type="number"
             className="bg-background"
@@ -201,7 +208,7 @@ export default function ExtractorSettingsForm({
       const text = arr.join(', ')
       return (
         <div key={key} className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{label}</Label>
+          <Label className="text-xs text-foreground">{label}</Label>
           <Input
             className="bg-background"
             value={text}

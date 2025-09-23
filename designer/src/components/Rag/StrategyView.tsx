@@ -580,6 +580,8 @@ function StrategyView() {
   const [isAddExtractorOpen, setIsAddExtractorOpen] = useState(false)
   const [newExtractorType, setNewExtractorType] = useState<string>('')
   const [newExtractorPriority, setNewExtractorPriority] = useState<string>('1')
+  const [newExtractorPriorityError, setNewExtractorPriorityError] =
+    useState(false)
   const [newExtractorConfig, setNewExtractorConfig] = useState<
     Record<string, unknown>
   >({})
@@ -621,6 +623,8 @@ function StrategyView() {
   const [editExtractorId, setEditExtractorId] = useState<string>('')
   const [editExtractorPriority, setEditExtractorPriority] =
     useState<string>('1')
+  const [editExtractorPriorityError, setEditExtractorPriorityError] =
+    useState(false)
   const [editExtractorConfig, setEditExtractorConfig] = useState<
     Record<string, unknown>
   >({})
@@ -1110,6 +1114,7 @@ function StrategyView() {
                       type="number"
                       className="mt-1 bg-background w-40"
                       value={newParserPriority}
+                      min={0}
                       onChange={e => setNewParserPriority(e.target.value)}
                     />
                   </div>
@@ -1160,7 +1165,7 @@ function StrategyView() {
           <div className="flex flex-col max-h-[80vh]">
             <DialogHeader className="bg-background p-4 border-b">
               <DialogTitle className="text-lg text-foreground">
-                Edit parser settings
+                Edit parser
               </DialogTitle>
             </DialogHeader>
             <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
@@ -1177,6 +1182,9 @@ function StrategyView() {
                 }
                 return (
                   <>
+                    <div className="text-sm font-medium text-foreground">
+                      {getFriendlyParserName(found.name)}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {schema.description}
                     </div>
@@ -1188,6 +1196,7 @@ function StrategyView() {
                         type="number"
                         className="mt-1 bg-background w-40"
                         value={editParserPriority}
+                        min={0}
                         onChange={e => setEditParserPriority(e.target.value)}
                       />
                     </div>
@@ -1351,6 +1360,7 @@ function StrategyView() {
                       type="number"
                       className="mt-1 bg-background w-40"
                       value={newExtractorPriority}
+                      min={0}
                       onChange={e => setNewExtractorPriority(e.target.value)}
                     />
                   </div>
@@ -1414,6 +1424,9 @@ function StrategyView() {
                 }
                 return (
                   <>
+                    <div className="text-sm font-medium text-foreground">
+                      {getFriendlyExtractorName(found.name)}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {schema.description}
                     </div>
@@ -1425,6 +1438,7 @@ function StrategyView() {
                         type="number"
                         className="mt-1 bg-background w-40"
                         value={editExtractorPriority}
+                        min={0}
                         onChange={e => setEditExtractorPriority(e.target.value)}
                       />
                     </div>
