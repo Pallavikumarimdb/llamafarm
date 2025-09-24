@@ -256,14 +256,9 @@ const Data = () => {
         namespace: activeProject.namespace,
         project: activeProject.project,
         name,
-<<<<<<< HEAD
-        data_processing_strategy: newDatasetDataProcessingStrategy,
-        database: newDatasetDatabase,
-      })
-=======
-        rag_strategy: 'default', // Default strategy
+        // Map the UI field to rag_strategy; database selection is handled server-side
+        rag_strategy: (newDatasetDataProcessingStrategy || 'default') as any,
       } as any)
->>>>>>> 0191c16 (fix(designer): another build error fix)
       toast({ message: 'Dataset created successfully', variant: 'default' })
       setIsCreateOpen(false)
       setNewDatasetName('')
