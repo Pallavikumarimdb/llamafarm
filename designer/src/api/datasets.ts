@@ -41,11 +41,9 @@ export async function createDataset(
   request: CreateDatasetRequest
 ): Promise<CreateDatasetResponse> {
   // The server expects { name, data_processing_strategy, database }
-  // while the current UI passes { name, rag_strategy }. Translate here and
-  // pick a valid database/strategy from the server when available.
-  let data_processing_strategy: string =
-    (request as any).rag_strategy || 'default'
-  let database: string = 'default'
+  // Use the provided request values directly (no rag_strategy translation).
+  let data_processing_strategy: string = request.data_processing_strategy
+  let database: string = request.database
 
   try {
     const strategiesResp = await apiClient.get(

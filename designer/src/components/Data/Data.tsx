@@ -79,11 +79,7 @@ const Data = () => {
       const apiList = apiDatasets.datasets.map(dataset => ({
         id: dataset.name,
         name: dataset.name,
-        // prefer rag_strategy if present; fall back to data_processing_strategy when available
-        rag_strategy:
-          (dataset as any).rag_strategy ||
-          (dataset as any).data_processing_strategy ||
-          'default',
+        // No rag_strategy on datasets; server provides data_processing_strategy/database
         files: (dataset as any).files,
         lastRun: new Date(),
         embedModel: 'text-embedding-3-large',
@@ -112,7 +108,6 @@ const Data = () => {
               .map(d => ({
                 id: d.id,
                 name: d.name,
-                rag_strategy: d.rag_strategy || 'default',
                 files: d.files || [],
                 lastRun: new Date(d.lastRun || Date.now()),
                 embedModel: d.embedModel || 'text-embedding-3-large',
@@ -141,7 +136,6 @@ const Data = () => {
       {
         id: 'demo-arxiv',
         name: 'arxiv-papers',
-        rag_strategy: 'PDF Simple',
         files: [],
         lastRun: new Date(),
         embedModel: 'text-embedding-3-large',
@@ -153,7 +147,6 @@ const Data = () => {
       {
         id: 'demo-handbook',
         name: 'company-handbook',
-        rag_strategy: 'Markdown',
         files: [],
         lastRun: new Date(),
         embedModel: 'text-embedding-3-large',
@@ -182,7 +175,6 @@ const Data = () => {
       navigate(`/chat/data/${found.id}`, { replace: true })
     }
   }, [location.search, datasets, navigate])
-
 
   // Map of fileKey -> array of dataset ids
   const [fileAssignments] = useState<Record<string, string[]>>(() => {
@@ -256,9 +248,9 @@ const Data = () => {
         namespace: activeProject.namespace,
         project: activeProject.project,
         name,
-        // Map the UI field to rag_strategy; database selection is handled server-side
-        rag_strategy: (newDatasetDataProcessingStrategy || 'default') as any,
-      } as any)
+        data_processing_strategy: newDatasetDataProcessingStrategy || 'default',
+        database: newDatasetDatabase || 'default',
+      })
       toast({ message: 'Dataset created successfully', variant: 'default' })
       setIsCreateOpen(false)
       setNewDatasetName('')
@@ -564,15 +556,15 @@ const Data = () => {
                                 >
                                   View
                                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={e => {
-                    e.stopPropagation()
-                    setConfirmDeleteId(ds.id)
-                    setConfirmDeleteName(ds.name)
-                    setIsConfirmDeleteOpen(true)
-                  }}
-                >
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setConfirmDeleteId(ds.id)
+                                    setConfirmDeleteName(ds.name)
+                                    setIsConfirmDeleteOpen(true)
+                                  }}
+                                >
                                   Delete
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -625,8 +617,9 @@ const Data = () => {
               namespace: activeProject.namespace,
               project: activeProject.project,
               name,
-              rag_strategy,
-            } as any)
+              data_processing_strategy: rag_strategy || 'default',
+              database: 'default',
+            })
             toast({ message: `Dataset "${name}" imported`, variant: 'default' })
             setIsImportOpen(false)
             navigate(`/chat/data/${name}`)
@@ -639,7 +632,6 @@ const Data = () => {
               const newEntry = {
                 id: name,
                 name,
-                rag_strategy: rag_strategy || 'default',
                 files: [],
                 lastRun: new Date(),
                 embedModel: 'text-embedding-3-large',
