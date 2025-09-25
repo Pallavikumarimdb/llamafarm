@@ -28,6 +28,17 @@
   --ifm-line-height-base: 1.65;
   --ifm-button-border-radius: 10px;
   --ifm-global-radius: 12px;
+
+  /* Downshift all headings while maintaining hierarchy */
+  --ifm-h1-font-size: 2rem;
+  --ifm-h2-font-size: 1.6rem;
+  --ifm-h3-font-size: 1.3rem;
+  --ifm-h4-font-size: 1.1rem;
+  --ifm-h5-font-size: 1rem;
+  --ifm-h6-font-size: 0.9rem;
+
+  /* Make headings less bold globally */
+  --ifm-heading-font-weight: 600;
 }
 
 /* Dark theme overrides */
@@ -61,14 +72,16 @@ html[data-theme='dark'] .main-wrapper {
     radial-gradient(800px 400px at 120% 10%, rgba(72,255,228,0.12), transparent 60%),
     #000B1B;
 }
-html[data-theme='light'] .main-wrapper {
-  background:
-    radial-gradient(1200px 600px at -10% -10%, rgba(1,123,247,0.06), transparent 60%),
-    #f6f8ff;
-}
+html[data-theme='light'] .main-wrapper { background: #ffffff; }
 
 /* Headings */
-h1, h2, h3, h4, h5, h6 { letter-spacing: 0.2px; }
+h1, h2, h3, h4, h5, h6 { letter-spacing: 0.2px; font-weight: var(--ifm-heading-font-weight); }
+html[data-theme='light'] h1,
+html[data-theme='light'] h2,
+html[data-theme='light'] h3,
+html[data-theme='light'] h4,
+html[data-theme='light'] h5,
+html[data-theme='light'] h6 { color: #0f172a; }
 
 /* Links */
 .markdown a, .menu__link--active, .pagination-nav__link { text-underline-offset: 3px; }
@@ -123,7 +136,7 @@ html[data-theme='dark'] .menu, html[data-theme='dark'] .menu__list-item-collapsi
 .hero { color: white; }
 
 /* Preserve existing effects */
-.hero__title { font-size: 3.5rem; font-weight: 800; margin-bottom: 1rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+.hero__title { font-size: 3.5rem; font-weight: 600; margin-bottom: 1rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 .hero__subtitle { font-size: 1.5rem; font-weight: 400; opacity: .95; text-shadow: 0 1px 2px rgba(0,0,0,.1); }
 
 /* Utility */
@@ -304,9 +317,9 @@ html[data-theme='dark'] .footer__link-item:hover { color: var(--ifm-color-primar
 
 /* Blog list & post titles */
 .blog .markdown h1, .blog .markdown .blog-post-title, .blog .markdown h2 {
-  font-size: 1.5rem !important;
+  font-size: 1.25rem !important;
 }
-.blog .markdown h3 { font-size: 1.1rem !important; }
+.blog .markdown h3 { font-size: 1rem !important; }
 
 /* Blog title color and hover */
 html[data-theme='dark'] .blog .markdown h1,
@@ -331,4 +344,12 @@ html[data-theme='dark'] .blog .article__title a {
 .blog .container .article__title a { text-decoration: none !important; }
 .blog .container .article__title a:hover { text-decoration: none !important; color: var(--ifm-color-primary) !important; }
 html[data-theme='dark'] .blog .container .article__title a { color: #ffffff !important; }
-.blog .container .article__title, .blog .container .blog-post-title { font-size: 1.35rem !important; }
+.blog .container .article__title, .blog .container .blog-post-title { font-size: 1.15rem !important; }
+
+/* Ensure smaller titles on blog home (stronger specificity) */
+.theme-blog .blog-list-page .article__title { font-size: 0.95rem !important; line-height: 1.35 !important; }
+.theme-blog .blog-list-page .article__title a { font-size: inherit !important; line-height: inherit !important; }
+
+/* Blog listing page specific tweaks */
+.blog-list-page .article__title { font-size: 1.15rem !important; }
+.blog-list-page .article__title a { line-height: 1.35 !important; }
