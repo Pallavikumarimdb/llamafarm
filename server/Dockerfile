@@ -14,17 +14,13 @@ RUN apt update && apt install -y curl && rm -rf /var/lib/apt/lists/*
 # Set working directory
 WORKDIR /app
 
-# Copy the required packages from the monorepo
+# Copy the required packages from the monorepo (lightweight server only)
 # Note: This Dockerfile should be run from the repo root: docker build -f server/Dockerfile .
 COPY config/ ./config/
-COPY rag/ ./rag/
-COPY models/ ./models/
 
-# Install each package with its own dependencies
+# Install config dependencies only (server no longer needs RAG/models)
 RUN ls -la config
 RUN cd config && uv sync --locked  --verbose
-RUN cd rag && uv sync --locked  --verbose
-RUN cd models && uv sync --locked  --verbose
 
 # Copy server dependency files and README
 COPY server/pyproject.toml server/uv.lock server/README.md ./server/
