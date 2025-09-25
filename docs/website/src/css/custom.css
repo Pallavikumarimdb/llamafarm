@@ -315,41 +315,8 @@ html[data-theme='dark'] .footer__link-item:hover { color: var(--ifm-color-primar
   }
 }
 
-/* Blog list & post titles */
-.blog .markdown h1, .blog .markdown .blog-post-title, .blog .markdown h2 {
-  font-size: 1.25rem !important;
-}
-.blog .markdown h3 { font-size: 1rem !important; }
-
-/* Blog title color and hover */
-html[data-theme='dark'] .blog .markdown h1,
-html[data-theme='dark'] .blog .markdown h2,
-html[data-theme='dark'] .blog .markdown .blog-post-title,
-html[data-theme='dark'] .blog .pagination-nav__label,
-html[data-theme='dark'] .blog .article__title a {
-  color: #ffffff !important;
-}
-
-.blog .article__title a,
-.blog .markdown a {
-  text-decoration: none !important;
-}
-
-.blog .article__title a:hover,
-.blog .markdown a:hover {
-  color: var(--ifm-color-primary) !important;
-  text-decoration: none !important;
-}
-
-.blog .container .article__title a { text-decoration: none !important; }
-.blog .container .article__title a:hover { text-decoration: none !important; color: var(--ifm-color-primary) !important; }
-html[data-theme='dark'] .blog .container .article__title a { color: #ffffff !important; }
-.blog .container .article__title, .blog .container .blog-post-title { font-size: 1.15rem !important; }
-
-/* Ensure smaller titles on blog home (stronger specificity) */
-.theme-blog .blog-list-page .article__title { font-size: 0.95rem !important; line-height: 1.35 !important; }
-.theme-blog .blog-list-page .article__title a { font-size: inherit !important; line-height: inherit !important; }
-
-/* Blog listing page specific tweaks */
-.blog-list-page .article__title { font-size: 1.15rem !important; }
-.blog-list-page .article__title a { line-height: 1.35 !important; }
+/* Blog list & post titles (consolidated) */
+.theme-blog .blog-list-page .article__title { font-size: 0.95rem; line-height: 1.35; font-weight: 600; }
+.theme-blog .blog-list-page .article__title a { font-size: inherit; line-height: inherit; text-decoration: none; }
+.theme-blog .blog-list-page .article__title a:hover { color: var(--ifm-color-primary); text-decoration: none; }
+html[data-theme='dark'] .theme-blog .blog-list-page .article__title a { color: #ffffff; }

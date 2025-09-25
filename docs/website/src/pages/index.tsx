@@ -1,10 +1,10 @@
-import { useEffect } from 'react'
-import { useHistory } from '@docusaurus/router'
+import Head from '@docusaurus/Head'
 
-export default function RootRedirect() {
-  const history = useHistory()
-  useEffect(() => {
-    history.replace('/docs/intro')
-  }, [history])
-  return null
+export default function RootMetaRedirect() {
+  return (
+    <Head>
+      <meta httpEquiv="refresh" content="0; url=/docs/intro" />
+      <meta name="robots" content="noindex" />
+    </Head>
+  )
 }
