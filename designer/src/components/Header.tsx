@@ -122,7 +122,7 @@ function Header() {
       )}
 
       <div className="w-full flex items-center h-12 relative">
-        <div className="w-auto sm:w-1/4 pl-4 flex items-center gap-2">
+        <div className="w-auto sm:w-1/4 pl-3 flex items-center gap-1.5">
           {isHomeLike ? (
             <button
               className="font-serif text-base text-foreground"
@@ -133,10 +133,10 @@ function Header() {
                 src={
                   theme === 'dark'
                     ? '/logotype-long-tan.svg'
-                    : '/logotype-long-tan-navy.svg'
+                    : '/logotype-long tan-navy.svg'
                 }
                 alt="LlamaFarm"
-                className="h-5 md:h-6 w-auto"
+                className="h-7 md:h-8 w-auto"
               />
             </button>
           ) : (
@@ -153,7 +153,7 @@ function Header() {
                       : '/llama-head-tan-light.svg'
                   }
                   alt="LlamaFarm logo"
-                  className="h-5 md:h-6 w-auto"
+                  className="h-7 md:h-8 w-auto"
                 />
               </button>
               <DropdownMenu
