@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ReleaseInfo,
   compareSemver,
   fetchLatestReleaseFromGithub,
   getCurrentVersion,

@@ -21,7 +21,7 @@ function Home() {
   const [search, setSearch] = useState('')
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const navigate = useNavigate()
-  const { currentVersion } = useUpgradeAvailability()
+  useUpgradeAvailability() // keep warm to prefetch latest in background
 
   // Enhanced chat functionality for project creation
 
@@ -131,12 +131,7 @@ function Home() {
 
   return (
     <div className="min-h-screen flex flex-col items-stretch px-4 sm:px-6 lg:px-8 pt-24 md:pt-28 pb-8 bg-background">
-      {/* set header pill text */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `try{var el=document.getElementById('lf-version-pill');if(el){el.textContent='v${currentVersion}';}}catch{}`,
-        }}
-      />
+      {/* version pill now passed via props to Header; no DOM injection here */}
       <div className="max-w-4xl w-full mx-auto text-center space-y-8">
         <div className="space-y-4">
           <p className="text-sm font-medium tracking-wide text-foreground/80">

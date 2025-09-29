@@ -27,6 +27,7 @@ import RetrievalMethod from './components/Rag/RetrievalMethod'
 import AddRetrievalStrategy from './components/Rag/AddRetrievalStrategy'
 // Projects standalone page removed; Home now hosts projects section
 import { HomeUpgradeBanner } from './components/common/UpgradeBanners'
+import { useUpgradeAvailability } from './hooks/useUpgradeAvailability'
 
 function ProjectModalRoot() {
   const modal = useProjectModalContext()
@@ -47,11 +48,12 @@ function ProjectModalRoot() {
 function App() {
   const location = useLocation()
   const isHome = location.pathname === '/'
+  const { currentVersion } = useUpgradeAvailability()
   return (
     <main className="h-screen w-full">
       <ToastProvider>
         <ProjectModalProvider>
-          <Header />
+          <Header currentVersion={currentVersion} />
           {isHome ? <HomeUpgradeBanner /> : null}
           <div className="h-full w-full">
             <Routes>

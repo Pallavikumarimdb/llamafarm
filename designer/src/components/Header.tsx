@@ -21,12 +21,15 @@ import { useQueryClient } from '@tanstack/react-query'
 import { VersionDetailsDialog } from './common/VersionDetailsDialog'
 import { projectKeys } from '../hooks/useProjects'
 
-function Header() {
+type HeaderProps = { currentVersion?: string }
+
+function Header({ currentVersion }: HeaderProps) {
   const [isBuilding, setIsBuilding] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const isSelected = location.pathname.split('/')[2]
   const { theme, setTheme } = useTheme()
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false)
 
   // Project dropdown state
   const [isProjectOpen, setIsProjectOpen] = useState(false)
@@ -299,19 +302,10 @@ function Header() {
           {isHomeLike ? (
             <button
               className="hidden sm:inline-flex items-center rounded-full border border-input text-foreground text-xs h-7 px-2.5"
-              onClick={() => {
-                try {
-                  // Toggle dialog via DOM event for simplicity
-                  window.dispatchEvent(
-                    new CustomEvent('lf_toggle_version_dialog')
-                  )
-                } catch {}
-              }}
+              onClick={() => setVersionDialogOpen(true)}
               title="Version details"
             >
-              <span id="lf-version-pill" className="font-mono">
-                v0.0.0
-              </span>
+              <span className="font-mono">v{currentVersion || '0.0.0'}</span>
             </button>
           ) : null}
           <div className="flex rounded-lg overflow-hidden border border-border">
@@ -343,27 +337,15 @@ function Header() {
         </div>
       </div>
       {/* Version dialog mounted at header scope */}
-      <VersionDetailsDialogMount />
+      <VersionDetailsDialog
+        open={versionDialogOpen}
+        onOpenChange={setVersionDialogOpen}
+      />
       {/* Modal is rendered by ProjectModalRoot in App */}
     </header>
   )
 }
 
-function VersionDetailsDialogMount() {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    const handler = () => setOpen(prev => !prev)
-    window.addEventListener(
-      'lf_toggle_version_dialog',
-      handler as EventListener
-    )
-    return () =>
-      window.removeEventListener(
-        'lf_toggle_version_dialog',
-        handler as EventListener
-      )
-  }, [])
-  return <VersionDetailsDialog open={open} onOpenChange={setOpen} />
-}
+// moved dialog control into Header component state for clearer boundaries
 
 export default Header
