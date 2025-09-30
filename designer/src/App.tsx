@@ -31,6 +31,8 @@ import { useUpgradeAvailability } from './hooks/useUpgradeAvailability'
 
 function ProjectModalRoot() {
   const modal = useProjectModalContext()
+  // Only render the modal for edit mode; create is handled by Home form
+  if (modal.modalMode !== 'edit') return null
   return (
     <ProjectModal
       isOpen={modal.isModalOpen}
