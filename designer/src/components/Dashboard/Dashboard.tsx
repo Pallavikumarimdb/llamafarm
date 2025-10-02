@@ -1,11 +1,4 @@
 import FontIcon from '../../common/FontIcon'
-import GitlabLogoDark from '../../assets/logos/gitlab-logo-dark.svg'
-import GithubLogoDark from '../../assets/logos/github-logo-dark.svg'
-import SlackLogoDark from '../../assets/logos/slack-logo-dark.svg'
-import GitlabLogoLight from '../../assets/logos/gitlab-logo-light.svg'
-import GithubLogoLight from '../../assets/logos/github-logo-light.svg'
-import SlackLogoLight from '../../assets/logos/slack-logo-light.svg'
-import { useTheme } from '../../contexts/ThemeContext'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mode } from '../ModeToggle'
@@ -19,7 +12,6 @@ import { useActiveProject } from '../../hooks/useActiveProject'
 import { useListDatasets } from '../../hooks/useDatasets'
 
 const Dashboard = () => {
-  const { theme } = useTheme()
   const navigate = useNavigate()
   // const namespace = getCurrentNamespace()
   const activeProject = useActiveProject()
@@ -50,7 +42,7 @@ const Dashboard = () => {
     !!activeProject?.namespace && !!activeProject?.project
   )
 
-  const { description: projectDescription, brief } = useMemo(() => {
+  const { brief } = useMemo(() => {
     const cfg = (projectDetail?.project?.config || {}) as Record<string, any>
     const description = cfg?.description || cfg?.project_description || ''
     const project_brief = (cfg?.project_brief || {}) as Record<string, any>
@@ -65,7 +57,6 @@ const Dashboard = () => {
           if (cached) {
             const parsed = JSON.parse(cached)
             return {
-              description,
               brief: {
                 what: parsed?.what || '',
                 goals: parsed?.goals || '',
@@ -77,7 +68,6 @@ const Dashboard = () => {
       } catch {}
     }
     return {
-      description,
       brief: {
         what: project_brief?.what || '',
         goals: project_brief?.goals || '',
