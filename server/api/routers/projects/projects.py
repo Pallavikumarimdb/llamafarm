@@ -24,11 +24,13 @@ from api.routers.shared.response_utils import (
     set_session_header,
 )
 from core.celery import app
+from core.settings import settings
 from services.project_chat_service import (
     FALLBACK_ECHO_RESPONSE,
     project_chat_service,
 )
 from services.project_service import ProjectService
+from services.docs_context_service import get_docs_service
 
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root))
@@ -317,8 +319,54 @@ async def chat(
         if msg.role == "user" and msg.content:
             latest_user_message = msg.content
             break
+
+    # If no user message, check if this is a greeting request (new session)
     if latest_user_message is None:
+        # For new sessions on project_seed, return the greeting from history
+        if project_id == "project_seed" and hasattr(agent, 'history'):
+            history_messages = list(agent.history.get_history())
+            # Look for the greeting message (last assistant message if it exists)
+            for msg in reversed(history_messages):
+                role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+                if role == "assistant":
+                    content_obj = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+                    content = None
+                    if isinstance(content_obj, dict):
+                        content = content_obj.get("chat_message")
+                    elif hasattr(content_obj, "chat_message"):
+                        content = getattr(content_obj, "chat_message", None)
+                    elif isinstance(content_obj, str):
+                        content = content_obj
+
+                    if content and "Welcome" in content:
+                        # Return the greeting as a chat completion
+                        from openai.types.chat import ChatCompletionMessage
+                        from openai.types.chat.chat_completion import Choice
+
+                        return ChatCompletion(
+                            id=f"chat-{uuid.uuid4()}",
+                            object="chat.completion",
+                            created=int(time.time()),
+                            model=project_config.runtime.model,
+                            choices=[
+                                Choice(
+                                    index=0,
+                                    message=ChatCompletionMessage(
+                                        role="assistant",
+                                        content=content,
+                                    ),
+                                    finish_reason="stop",
+                                )
+                            ],
+                        )
+
         raise HTTPException(status_code=400, detail="No user message provided")  # noqa: F821
+
+    # Inject relevant documentation based on user query (dev mode only)
+    if settings.lf_dev_mode_docs_enabled and project_id == "project_seed" and hasattr(agent, "docs_context_provider"):
+        docs_service = get_docs_service()
+        matched_docs = docs_service.match_docs_for_query(latest_user_message)
+        agent.docs_context_provider.set_docs(matched_docs)
 
     if request.stream:
         return create_streaming_response_from_iterator(
