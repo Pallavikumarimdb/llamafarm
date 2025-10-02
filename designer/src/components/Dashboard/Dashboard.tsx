@@ -44,7 +44,6 @@ const Dashboard = () => {
 
   const { brief } = useMemo(() => {
     const cfg = (projectDetail?.project?.config || {}) as Record<string, any>
-    const description = cfg?.description || cfg?.project_description || ''
     const project_brief = (cfg?.project_brief || {}) as Record<string, any>
     // Fallback to localStorage cache if server-side brief not present yet
     if (!project_brief || Object.keys(project_brief).length === 0) {
