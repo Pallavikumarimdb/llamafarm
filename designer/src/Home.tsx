@@ -231,8 +231,13 @@ function Home() {
           config: mergedConfig,
         })
       } catch (e) {
-        // Non-blocking if update fails; user can edit later
-        console.warn('Failed to persist project_brief; continuing', e)
+        // Notify the user that config update failed, but project was created
+        try {
+          window.alert(
+            'Project was created, but saving project details failed. Some information may not be saved.'
+          )
+        } catch {}
+        console.error('Failed to update project config:', e)
       }
 
       // Also persist brief locally for resilience against schema mismatches or offline use

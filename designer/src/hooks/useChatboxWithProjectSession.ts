@@ -188,7 +188,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     const combined = [...projectSessionMessages, ...streamingMessages]
 
     // Filter out "Thinking..." placeholder messages for UI display
-    const filteredForUI = combined.filter(msg => {
+    return combined.filter(msg => {
       const isThinkingPlaceholder =
         msg.type === 'assistant' &&
         msg.content === 'Thinking...' &&
@@ -196,8 +196,6 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         !msg.isLoading
       return !isThinkingPlaceholder
     })
-
-    return filteredForUI
   }, [projectSessionMessages, streamingMessages])
 
   // Handle sending message with streaming or non-streaming API integration

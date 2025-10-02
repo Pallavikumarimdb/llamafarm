@@ -208,13 +208,11 @@ export const useProjectModal = ({
           // Update details on same project (no rename)
           try {
             const updates: Record<string, any> = {}
-            if (details) {
-              if (details.brief) {
-                updates.project_brief = {
-                  what: details.brief.what || '',
-                  goals: details.brief.goals || '',
-                  audience: details.brief.audience || '',
-                }
+            if (details && details.brief) {
+              updates.project_brief = {
+                what: details.brief.what || '',
+                goals: details.brief.goals || '',
+                audience: details.brief.audience || '',
               }
             }
             if (Object.keys(updates).length > 0) {
@@ -257,13 +255,11 @@ export const useProjectModal = ({
           name: newName,
           namespace,
         }
-        if (details) {
-          if (details.brief) {
-            updatesAfterRename.project_brief = {
-              what: details.brief.what || '',
-              goals: details.brief.goals || '',
-              audience: details.brief.audience || '',
-            }
+        if (details && details.brief) {
+          updatesAfterRename.project_brief = {
+            what: details.brief.what || '',
+            goals: details.brief.goals || '',
+            audience: details.brief.audience || '',
           }
         }
         const copiedConfig = mergeProjectConfig(

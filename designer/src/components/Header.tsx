@@ -81,7 +81,7 @@ function Header({ currentVersion }: HeaderProps) {
   useEffect(() => {
     const onActiveProject = (e: Event) => {
       try {
-        const detail = (e as CustomEvent<string>).detail
+        const { detail } = e as CustomEvent<string>
         if (detail && detail !== activeProject) {
           setActiveProject(detail)
         }
