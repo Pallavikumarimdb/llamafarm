@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useUpgradeAvailability } from '@/hooks/useUpgradeAvailability'
+import UpgradeModal from '@/components/common/UpgradeModal'
 
 export function HomeUpgradeBanner() {
+  const [open, setOpen] = useState(false)
   const {
     upgradeAvailable,
     latestVersion,
@@ -35,14 +37,12 @@ export function HomeUpgradeBanner() {
             </a>
           </div>
           <div className="flex items-center gap-2">
-            <a
-              href={releasesUrl}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              onClick={() => setOpen(true)}
               className="px-3 py-1 rounded-md bg-teal-600 text-white hover:bg-teal-700 text-sm"
             >
               Upgrade to latest
-            </a>
+            </button>
             <button
               onClick={() => dismiss('home')}
               className="px-2 py-1 rounded-md border border-teal-200 dark:border-teal-800 text-sm hover:bg-teal-100 dark:hover:bg-teal-800/40"
@@ -52,6 +52,7 @@ export function HomeUpgradeBanner() {
           </div>
         </div>
       </div>
+      <UpgradeModal open={open} onOpenChange={setOpen} />
       {/* Spacer to offset fixed banner height */}
       <div aria-hidden className="w-full h-10" />
     </>
@@ -59,6 +60,7 @@ export function HomeUpgradeBanner() {
 }
 
 export function ProjectUpgradeBanner() {
+  const [open, setOpen] = useState(false)
   const {
     upgradeAvailable,
     latestVersion,
@@ -82,14 +84,12 @@ export function ProjectUpgradeBanner() {
           <span className="font-medium">Upgrade available</span>{' '}
           <span className="font-mono">v{latestVersion}</span>
         </div>
-        <a
-          href={releasesUrl}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          onClick={() => setOpen(true)}
           className="px-2 py-1 rounded-md bg-teal-600 text-white hover:bg-teal-700 text-xs"
         >
           Upgrade
-        </a>
+        </button>
         <button
           onClick={() => dismiss('project')}
           className="px-2 py-1 rounded-md text-xs border border-teal-200 dark:border-teal-800 hover:bg-teal-100 dark:hover:bg-teal-800/40"
@@ -97,6 +97,7 @@ export function ProjectUpgradeBanner() {
           Dismiss
         </button>
       </div>
+      <UpgradeModal open={open} onOpenChange={setOpen} />
     </div>
   )
 }
