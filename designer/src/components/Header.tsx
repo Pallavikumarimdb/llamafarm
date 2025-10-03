@@ -18,18 +18,24 @@ import {
 import { getCurrentNamespace } from '../utils/namespaceUtils'
 import { getProjectsList } from '../utils/projectConstants'
 import { useQueryClient } from '@tanstack/react-query'
+import { VersionDetailsDialog } from './common/VersionDetailsDialog'
 import { projectKeys } from '../hooks/useProjects'
 
-function Header() {
+type HeaderProps = { currentVersion?: string }
+
+function Header({ currentVersion }: HeaderProps) {
   const [isBuilding, setIsBuilding] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const isSelected = location.pathname.split('/')[2]
   const { theme, setTheme } = useTheme()
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false)
 
   // Project dropdown state
   const [isProjectOpen, setIsProjectOpen] = useState(false)
-  const [activeProject, setActiveProject] = useState<string>(getActiveProject)
+  const [activeProject, setActiveProject] = useState<string>(() =>
+    getActiveProject()
+  )
   const namespace = getCurrentNamespace()
 
   // API hooks
@@ -70,6 +76,32 @@ function Header() {
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
+
+  // React to global active project change events and storage updates
+  useEffect(() => {
+    const onActiveProject = (e: Event) => {
+      try {
+        const { detail } = e as CustomEvent<string>
+        if (detail && detail !== activeProject) {
+          setActiveProject(detail)
+        }
+      } catch {}
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'activeProject' && typeof e.newValue === 'string') {
+        if (e.newValue !== activeProject) setActiveProject(e.newValue)
+      }
+    }
+    window.addEventListener('lf-active-project' as any, onActiveProject as any)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(
+        'lf-active-project' as any,
+        onActiveProject as any
+      )
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [activeProject])
 
   // Synchronize animation with query loading state
   useEffect(() => {
@@ -121,7 +153,7 @@ function Header() {
       )}
 
       <div className="w-full flex items-center h-12 relative">
-        <div className="w-auto sm:w-1/4 pl-4 flex items-center gap-2">
+        <div className="w-auto sm:w-1/4 pl-3 flex items-center gap-1.5">
           {isHomeLike ? (
             <button
               className="font-serif text-base text-foreground"
@@ -132,10 +164,10 @@ function Header() {
                 src={
                   theme === 'dark'
                     ? '/logotype-long-tan.svg'
-                    : '/logotype-long-tan-navy.svg'
+                    : '/logotype-long tan-navy.svg'
                 }
                 alt="LlamaFarm"
-                className="h-5 md:h-6 w-auto"
+                className="h-7 md:h-8 w-auto"
               />
             </button>
           ) : (
@@ -152,7 +184,7 @@ function Header() {
                       : '/llama-head-tan-light.svg'
                   }
                   alt="LlamaFarm logo"
-                  className="h-5 md:h-6 w-auto"
+                  className="h-7 md:h-8 w-auto"
                 />
               </button>
               <DropdownMenu
@@ -294,6 +326,16 @@ function Header() {
         )}
 
         <div className="flex items-center gap-3 justify-end absolute right-4 top-1/2 -translate-y-1/2">
+          {/* Version pill on Home only - place to the left of the theme toggle */}
+          {isHomeLike ? (
+            <button
+              className="hidden sm:inline-flex items-center rounded-full border border-input text-foreground text-xs h-7 px-2.5"
+              onClick={() => setVersionDialogOpen(true)}
+              title="Version details"
+            >
+              <span className="font-mono">v{currentVersion || '0.0.0'}</span>
+            </button>
+          ) : null}
           <div className="flex rounded-lg overflow-hidden border border-border">
             <button
               className={`w-8 h-7 flex items-center justify-center transition-colors ${
@@ -322,9 +364,16 @@ function Header() {
           </div>
         </div>
       </div>
+      {/* Version dialog mounted at header scope */}
+      <VersionDetailsDialog
+        open={versionDialogOpen}
+        onOpenChange={setVersionDialogOpen}
+      />
       {/* Modal is rendered by ProjectModalRoot in App */}
     </header>
   )
 }
+
+// moved dialog control into Header component state for clearer boundaries
 
 export default Header

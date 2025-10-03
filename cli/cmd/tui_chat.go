@@ -1,15 +1,14 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"llamafarm-cli/cmd/config"
+	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
+	"github.com/google/uuid"
 )
 
 var (
@@ -31,6 +31,22 @@ var (
 	sessionPrompt    = "🆔"
 )
 
+// getAssistantLabel returns the appropriate label based on the current chat mode
+func (m chatModel) getAssistantLabel() string {
+	if m.currentMode == ModeProject {
+		return projectPrompt
+	}
+	return farmerPrompt
+}
+
+// renderMarkdown is disabled for now - Glamour doesn't work well in TUI environments
+// It detects we're not in a TTY and falls back to ASCII-only mode regardless of config
+func renderMarkdown(content string, width int) string {
+	// TODO: Implement proper markdown rendering for TUI
+	// For now, just return the content as-is
+	return content
+}
+
 const gap = "\n\n"
 
 // overrides provided by dev command
@@ -40,16 +56,47 @@ var designerForced bool
 var lastTranscriptKey string
 
 var chatCtx = &ChatSessionContext{
-	ServerURL:   serverURL,
-	Namespace:   "llamafarm",
-	ProjectID:   "project-seed",
-	Temperature: temperature,
-	MaxTokens:   maxTokens,
-	HTTPClient:  getHTTPClient(),
+	ServerURL:        serverURL,
+	Namespace:        "llamafarm",
+	ProjectID:        "project_seed",
+	SessionMode:      SessionModeDev,
+	SessionNamespace: namespace,
+	SessionProject:   projectID,
+	Temperature:      temperature,
+	MaxTokens:        maxTokens,
+	HTTPClient:       getHTTPClient(),
 }
 
 // runChatSessionTUI starts the Bubble Tea TUI for chat.
-func runChatSessionTUI(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) {
+func runChatSessionTUI(mode SessionMode, projectInfo *config.ProjectInfo, serverHealth *HealthPayload) {
+	// Update session context with project info first
+	if projectInfo != nil {
+		chatCtx.SessionNamespace = projectInfo.Namespace
+		chatCtx.SessionProject = projectInfo.Project
+		if mode == SessionModeProject {
+			chatCtx.Namespace = projectInfo.Namespace
+			chatCtx.ProjectID = projectInfo.Project
+		}
+	}
+	chatCtx.ServerURL = serverURL
+	chatCtx.HTTPClient = getHTTPClient()
+	chatCtx.SessionMode = mode
+
+	// Load existing session context to restore session ID if available
+	// This needs to happen AFTER we set SessionNamespace/SessionProject
+	// so we read from the correct location
+	if chatCtx.SessionMode == SessionModeDev {
+		if existingContext, err := readSessionContext(chatCtx); err == nil && existingContext != nil {
+			chatCtx.SessionID = existingContext.SessionID
+			logDebug(fmt.Sprintf("Restored dev mode session ID: %s", chatCtx.SessionID))
+		}
+	} else if chatCtx.SessionMode == SessionModeProject {
+		if existingContext, err := readSessionContext(chatCtx); err == nil && existingContext != nil {
+			chatCtx.SessionID = existingContext.SessionID
+			logDebug(fmt.Sprintf("Restored project mode session ID: %s", chatCtx.SessionID))
+		}
+	}
+
 	m := newChatModel(projectInfo, serverHealth)
 	p := tea.NewProgram(m)
 	m.program = p
@@ -64,20 +111,32 @@ func runChatSessionTUI(projectInfo *config.ProjectInfo, serverHealth *HealthPayl
 	}
 }
 
+type ChatMode int
+
+const (
+	ModeDev     ChatMode = iota // Chat with llamafarm/project_seed for help
+	ModeProject                 // Chat with user's project to test
+)
+
+type ModeContext struct {
+	Mode      ChatMode
+	SessionID string
+	Messages  []Message
+	History   []string
+}
+
 type chatModel struct {
 	transcript     string
 	serverHealth   *HealthPayload
 	projectInfo    *config.ProjectInfo
 	spin           spinner.Model
-	messages       []ChatMessage
+	messages       []Message
 	thinking       bool
 	printing       bool
 	thinkFrame     int
 	history        []string
 	histIndex      int
-	historyPath    string
 	width          int
-	height         int
 	status         string
 	err            error
 	viewport       viewport.Model
@@ -86,6 +145,10 @@ type chatModel struct {
 	streamCh       chan tea.Msg
 	designerStatus string
 	designerURL    string
+	// Mode switching state
+	currentMode    ChatMode
+	devModeCtx     *ModeContext
+	projectModeCtx *ModeContext
 }
 
 type (
@@ -99,9 +162,10 @@ type tickMsg struct{}
 type designerReadyMsg struct{ url string }
 type designerErrorMsg struct{ err error }
 type serverHealthMsg struct{ health *HealthPayload }
+type modeSwitchMsg struct{ mode ChatMode }
 
 func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) chatModel {
-	messages := []ChatMessage{{Role: "client", Content: "Send a message or type '/help' for commands."}}
+	var devMessages []Message
 
 	ta := textarea.New()
 	ta.Placeholder = "Send a message..."
@@ -118,66 +182,208 @@ func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) 
 	ta.ShowLineNumbers = false
 
 	vp := viewport.New(30, 5)
-	vp.SetContent(renderChatContent(chatModel{messages: messages}))
 
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
-	hPath := getHistoryPath()
-	h := loadHistory(hPath)
+
+	// Build DEV mode history regardless of current session mode
+	var devHistory SessionHistory
+	var devUserChatMessages []string
+	var devSessionID string
+	{
+		// Read DEV session context from disk: session storage is keyed to user's project
+		// while chat target for DEV is llamafarm/project_seed
+		devCtxForRead := &ChatSessionContext{
+			ServerURL:        chatCtx.ServerURL,
+			Namespace:        "llamafarm",
+			ProjectID:        "project_seed",
+			SessionMode:      SessionModeDev,
+			SessionNamespace: chatCtx.SessionNamespace,
+			SessionProject:   chatCtx.SessionProject,
+			HTTPClient:       chatCtx.HTTPClient,
+		}
+		if existingContext, err := readSessionContext(devCtxForRead); err == nil && existingContext != nil {
+			devSessionID = existingContext.SessionID
+		}
+		if devSessionID != "" {
+			devHistory = fetchSessionHistory(chatCtx.ServerURL, "llamafarm", "project_seed", devSessionID)
+			for _, msg := range devHistory.Messages {
+				if msg.Role == "user" {
+					devUserChatMessages = append(devUserChatMessages, msg.Content.ChatMessage)
+				}
+				devMessages = append(devMessages, Message{Role: msg.Role, Content: msg.Content.ChatMessage})
+			}
+			logDebug(fmt.Sprintf("Restored DEV history (session %s): %d messages", devSessionID, len(devHistory.Messages)))
+		}
+		if len(devMessages) == 0 {
+			devMessages = append(devMessages, Message{Role: "client", Content: "Send a message or type '/help' for commands."})
+		}
+	}
+
+	// Fetch initial greeting for project_seed (disabled)
+	// if greeting := fetchInitialGreeting(chatCtx); greeting != "" {
+	// 	messages = append(messages, Message{Role: "assistant", Content: greeting})
+	// }
 
 	width, _, _ := term.GetSize(uintptr(os.Stdout.Fd()))
 
-	messages = append(messages, ChatMessage{Role: "client", Content: renderServerStatusProblems(serverHealth)})
-	// transcript = append(transcript, problems)
+	// Always include server status as a client message in both modes
+	devMessages = append(devMessages, Message{Role: "client", Content: renderServerStatusProblems(serverHealth)})
+
+	// Initialize mode contexts - build DEV context
+	devCtx := &ModeContext{
+		Mode:      ModeDev,
+		SessionID: devSessionID,
+		Messages:  devMessages,
+		History:   devUserChatMessages,
+	}
+
+	// Project mode context - try to restore session or create new one
+	var projectSessionID string
+	var projectHistory []string
+	var projectMessages []Message
+
+	if projectInfo != nil {
+		// Try to load existing project session
+		projectChatCtx := &ChatSessionContext{
+			ServerURL:        chatCtx.ServerURL,
+			Namespace:        projectInfo.Namespace,
+			ProjectID:        projectInfo.Project,
+			SessionMode:      SessionModeProject,
+			SessionNamespace: projectInfo.Namespace,
+			SessionProject:   projectInfo.Project,
+			HTTPClient:       chatCtx.HTTPClient,
+		}
+		if existingContext, err := readSessionContext(projectChatCtx); err == nil && existingContext != nil {
+			projectSessionID = existingContext.SessionID
+			logDebug(fmt.Sprintf("Restored project mode session ID: %s", projectSessionID))
+		} else {
+			// Create new session for project mode
+			projectSessionID = uuid.New().String()
+			logDebug(fmt.Sprintf("Created new project mode session ID: %s", projectSessionID))
+		}
+
+		// Fetch and render project session history using the project's namespace/project
+		projHist := fetchSessionHistory(chatCtx.ServerURL, projectInfo.Namespace, projectInfo.Project, projectSessionID)
+		for _, msg := range projHist.Messages {
+			if msg.Role == "user" {
+				projectHistory = append(projectHistory, msg.Content.ChatMessage)
+			}
+			projectMessages = append(projectMessages, Message{Role: msg.Role, Content: msg.Content.ChatMessage})
+		}
+	} else {
+		// No project info, still create a session ID for future use
+		projectSessionID = uuid.New().String()
+	}
+
+	if len(projectMessages) == 0 {
+		projectMessages = []Message{{Role: "client", Content: "Send a message or type '/help' for commands."}}
+	}
+	// Add server status to project messages as well
+	projectMessages = append(projectMessages, Message{Role: "client", Content: renderServerStatusProblems(serverHealth)})
+
+	projectCtx := &ModeContext{
+		Mode:      ModeProject,
+		SessionID: projectSessionID,
+		Messages:  projectMessages,
+		History:   projectHistory,
+	}
+
+	// Choose initial mode and state
+	initialMode := ModeDev
+	initialMessages := devMessages
+	initialHistory := devUserChatMessages
+	if chatCtx.SessionMode == SessionModeProject && projectInfo != nil {
+		initialMode = ModeProject
+		initialMessages = projectMessages
+		initialHistory = projectHistory
+	}
+
+	// Initialize viewport content with initial mode messages
+	vp.SetContent(renderChatContent(chatModel{messages: initialMessages}))
 
 	return chatModel{
 		serverHealth:   serverHealth,
 		projectInfo:    projectInfo,
 		spin:           s,
-		messages:       messages,
+		messages:       initialMessages,
 		thinking:       false,
 		printing:       false,
-		history:        h,
-		histIndex:      len(h),
-		historyPath:    hPath,
+		history:        initialHistory,
+		histIndex:      len(initialHistory),
 		designerStatus: "starting…",
 		textarea:       ta,
 		viewport:       vp,
 		width:          width,
+		currentMode:    initialMode,
+		devModeCtx:     devCtx,
+		projectModeCtx: projectCtx,
 	}
 }
 
-func getHistoryPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	dir := filepath.Join(home, ".llamafarm")
-	_ = os.MkdirAll(dir, 0700)
-	return filepath.Join(dir, "history")
+// Helper methods for mode management
+func (m *chatModel) saveCurrentModeState() {
+	ctx := m.getCurrentModeContext()
+	ctx.Messages = m.messages
+	ctx.History = m.history
 }
 
-func loadHistory(path string) []string {
-	if path == "" {
-		return nil
+func (m *chatModel) getCurrentModeContext() *ModeContext {
+	if m.currentMode == ModeDev {
+		return m.devModeCtx
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
+	return m.projectModeCtx
+}
+
+func (m *chatModel) restoreModeState(mode ChatMode) {
+	var ctx *ModeContext
+	if mode == ModeDev {
+		ctx = m.devModeCtx
+	} else {
+		ctx = m.projectModeCtx
 	}
-	defer f.Close()
-	var out []string
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line != "" {
-			out = append(out, line)
+
+	m.messages = ctx.Messages
+	m.history = ctx.History
+	m.histIndex = len(ctx.History)
+}
+
+func (m *chatModel) switchMode(newMode ChatMode) string {
+	// Save current state
+	m.saveCurrentModeState()
+
+	// Switch mode
+	m.currentMode = newMode
+
+	// Restore new mode state
+	m.restoreModeState(newMode)
+
+	// Update chat context
+	if newMode == ModeDev {
+		chatCtx.Namespace = "llamafarm"
+		chatCtx.ProjectID = "project_seed"
+		chatCtx.SessionID = m.devModeCtx.SessionID
+		chatCtx.SessionMode = SessionModeDev
+	} else {
+		if m.projectInfo != nil {
+			chatCtx.Namespace = m.projectInfo.Namespace
+			chatCtx.ProjectID = m.projectInfo.Project
+			chatCtx.SessionID = m.projectModeCtx.SessionID
+			chatCtx.SessionMode = SessionModeProject
 		}
 	}
-	return out
+
+	// Save session context for the new mode
+	_ = writeSessionContext(chatCtx, chatCtx.SessionID)
+
+	// Return switch message
+	if newMode == ModeDev {
+		return "🦙 Switched to DEV MODE - Chat with LlamaFarm Assistant"
+	}
+	return fmt.Sprintf("🎯 Switched to PROJECT MODE - Testing %s/%s", chatCtx.Namespace, chatCtx.ProjectID)
 }
 
 func (m chatModel) Init() tea.Cmd {
@@ -261,7 +467,20 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "👋 You have left the pasture. Safe travels, little llama!"
 			return m, tea.Quit
 
+		case "ctrl+t":
+			// Toggle between modes
+			newMode := ModeProject
+			if m.currentMode == ModeProject {
+				newMode = ModeDev
+			}
+			switchMsg := m.switchMode(newMode)
+			m.messages = append(m.messages, Message{Role: "client", Content: switchMsg})
+			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+			m.viewport.GotoBottom()
+			return m, nil
+
 		case "up":
+			logDebug(fmt.Sprintf("Up arrow pressed. Current history: %+v", m.history))
 			if m.histIndex > 0 {
 				m.histIndex--
 				m.textarea.SetValue(m.history[m.histIndex])
@@ -292,22 +511,61 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd := fields[0]
 				switch cmd {
 				case "/help":
-					m.messages = append(m.messages, ChatMessage{Role: "client", Content: "Commands: /help, /launch designer, /clear, /exit"})
+					m.messages = append(m.messages, Message{Role: "client", Content: "Commands: /help, /switch, /mode [dev|project], /clear, /launch designer, /exit\nPress Ctrl+T to toggle between DEV and PROJECT modes"})
 					m.textarea.SetValue("")
+				case "/switch":
+					// Toggle between modes
+					newMode := ModeProject
+					if m.currentMode == ModeProject {
+						newMode = ModeDev
+					}
+					switchMsg := m.switchMode(newMode)
+					m.messages = append(m.messages, Message{Role: "client", Content: switchMsg})
+					m.textarea.SetValue("")
+					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+					m.viewport.GotoBottom()
+				case "/mode":
+					if len(fields) < 2 {
+						m.messages = append(m.messages, Message{Role: "client", Content: "Usage: /mode [dev|project]"})
+						m.textarea.SetValue("")
+						return m, nil
+					}
+					modeArg := fields[1]
+					var newMode ChatMode
+					switch modeArg {
+					case "dev":
+						newMode = ModeDev
+					case "project":
+						newMode = ModeProject
+					default:
+						m.messages = append(m.messages, Message{Role: "client", Content: "Unknown mode. Use: /mode [dev|project]"})
+						m.textarea.SetValue("")
+						return m, nil
+					}
+					if newMode == m.currentMode {
+						m.messages = append(m.messages, Message{Role: "client", Content: fmt.Sprintf("Already in %s mode", modeArg)})
+						m.textarea.SetValue("")
+						return m, nil
+					}
+					switchMsg := m.switchMode(newMode)
+					m.messages = append(m.messages, Message{Role: "client", Content: switchMsg})
+					m.textarea.SetValue("")
+					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+					m.viewport.GotoBottom()
 				case "/launch":
 					if len(fields) < 2 {
-						m.messages = append(m.messages, ChatMessage{Role: "client", Content: "Usage: /launch <component>. Components: designer"})
+						m.messages = append(m.messages, Message{Role: "client", Content: "Usage: /launch <component>. Components: designer"})
 						m.textarea.SetValue("")
 						break
 					}
 					target := fields[1]
 					if target != "designer" {
-						m.messages = append(m.messages, ChatMessage{Role: "client", Content: fmt.Sprintf("Unknown component '%s'. Try: /launch designer", target)})
+						m.messages = append(m.messages, Message{Role: "client", Content: fmt.Sprintf("Unknown component '%s'. Try: /launch designer", target)})
 						m.textarea.SetValue("")
 						break
 					}
 					if strings.TrimSpace(m.designerURL) == "" || m.designerStatus != "ready" {
-						m.messages = append(m.messages, ChatMessage{Role: "client", Content: "Designer is not running yet."})
+						m.messages = append(m.messages, Message{Role: "client", Content: "Designer is not running yet."})
 						m.textarea.SetValue("")
 						break
 					}
@@ -317,31 +575,70 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = "👋 You have left the pasture. Safe travels, little llama!"
 					return m, tea.Quit
 				case "/clear":
+					// Get current mode context
+					ctx := m.getCurrentModeContext()
+
+					// Delete server-side session for current mode
+					if ctx.SessionID != "" {
+						// Determine namespace/project for current mode
+						var namespace, projectID string
+						if m.currentMode == ModeDev {
+							namespace = "llamafarm"
+							projectID = "project_seed"
+						} else if m.projectInfo != nil {
+							namespace = m.projectInfo.Namespace
+							projectID = m.projectInfo.Project
+						}
+
+						if namespace != "" && projectID != "" {
+							deleteURL := fmt.Sprintf("%s/v1/projects/%s/%s/chat/sessions/%s",
+								strings.TrimSuffix(chatCtx.ServerURL, "/"),
+								namespace,
+								projectID,
+								ctx.SessionID)
+							req, err := http.NewRequest("DELETE", deleteURL, nil)
+							if err == nil {
+								resp, err := chatCtx.HTTPClient.Do(req)
+								if err == nil {
+									resp.Body.Close()
+									logDebug(fmt.Sprintf("Deleted server session %s", ctx.SessionID))
+								}
+							}
+						}
+
+						// Generate new session ID for current mode
+						ctx.SessionID = uuid.New().String()
+
+						// Update global chatCtx session ID
+						chatCtx.SessionID = ctx.SessionID
+
+						// Save new session context
+						_ = writeSessionContext(chatCtx, ctx.SessionID)
+						logDebug(fmt.Sprintf("Created new dev mode session ID: %s", ctx.SessionID))
+					}
+
+					// Clear local state for current mode
+					ctx.Messages = []Message{{Role: "client", Content: "Session cleared. New session started."}}
+					ctx.History = []string{}
+
+					// Update model state
 					m.transcript = ""
-					m.messages = nil
+					m.messages = ctx.Messages
+					m.history = ctx.History
 					m.textarea.SetValue("")
 					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
 					m.thinking = false
 					m.printing = false
 				default:
-					m.messages = append(m.messages, ChatMessage{Role: "client", Content: fmt.Sprintf("Unknown command '%s'. All commands must start with '/'. Type '/help' for available commands.", cmd)})
+					m.messages = append(m.messages, Message{Role: "client", Content: fmt.Sprintf("Unknown command '%s'. All commands must start with '/'. Type '/help' for available commands.", cmd)})
 					m.textarea.SetValue("")
 				}
-				break
-			}
-
-			// persist history
-			if m.historyPath != "" {
-				f, err := os.OpenFile(m.historyPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-				if err == nil {
-					fmt.Fprintln(f, msg)
-					f.Close()
-				}
+				return m, nil
 			}
 
 			m.history = append(m.history, msg)
 			m.histIndex = len(m.history)
-			m.messages = append(m.messages, ChatMessage{Role: "user", Content: msg})
+			m.messages = append(m.messages, Message{Role: "user", Content: msg})
 			m.textarea.SetValue("")
 			m.thinking = true
 			m.printing = true
@@ -385,13 +682,13 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.thinking = false
 		m.printing = true
 		if len(m.messages) == 0 || (len(m.messages) > 0 && m.messages[len(m.messages)-1].Role != "assistant") {
-			m.messages = append(m.messages, ChatMessage{Role: "assistant", Content: msg.content})
+			m.messages = append(m.messages, Message{Role: "assistant", Content: msg.content})
 		} else {
 			// Update last assistant line
 			if len(m.messages) > 0 {
-				m.messages[len(m.messages)-1] = ChatMessage{Role: "assistant", Content: msg.content}
+				m.messages[len(m.messages)-1] = Message{Role: "assistant", Content: msg.content}
 			} else {
-				m.messages = append(m.messages, ChatMessage{Role: "assistant", Content: msg.content})
+				m.messages = append(m.messages, Message{Role: "assistant", Content: msg.content})
 			}
 		}
 
@@ -404,7 +701,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.thinking = false
 		m.err = msg.err
-		m.messages = append(m.messages, ChatMessage{Role: "error", Content: fmt.Sprintf("Error: %v", msg.err)})
+		m.messages = append(m.messages, Message{Role: "error", Content: fmt.Sprintf("Error: %v", msg.err)})
 		if m.streamCh != nil {
 			cmds = append(cmds, listen(m.streamCh))
 		}
@@ -444,7 +741,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TUIMessageMsg:
 		// Handle output messages routed through the messaging API
 		formattedContent := FormatMessage(msg.Message)
-		m.messages = append(m.messages, ChatMessage{Role: "client", Content: formattedContent})
+		m.messages = append(m.messages, Message{Role: "client", Content: formattedContent})
 	}
 
 	m.transcript = computeTranscript(m)
@@ -490,7 +787,11 @@ func computeTranscript(m chatModel) string {
 			var line string
 			switch message.Role {
 			case "assistant":
-				line = baseStyle.Foreground(lipgloss.Color("11")).Render(farmerPrompt) + " " + message.Content + "\n"
+				// Render Markdown content with ANSI styling
+				renderedContent := renderMarkdown(message.Content, m.width-len(m.getAssistantLabel())-4)
+				// Don't use lipgloss.Render on the rendered content to preserve ANSI codes
+				labelStyle := baseStyle.Foreground(lipgloss.Color("11"))
+				line = labelStyle.Render(m.getAssistantLabel()) + " " + renderedContent + "\n"
 			case "user":
 				style := baseStyle.Foreground(lipgloss.Color("#ccc"))
 				line = style.Bold(true).Render("> ") + style.Render(message.Content)
@@ -526,7 +827,7 @@ func renderChatContent(m chatModel) string {
 
 	if m.thinking {
 		dots := m.thinkFrame + 1
-		thinkingText := farmerPrompt + " " + m.spin.View() + "Thinking" + strings.Repeat(".", dots)
+		thinkingText := m.getAssistantLabel() + " " + m.spin.View() + "Thinking" + strings.Repeat(".", dots)
 		wrappedThinking := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Width(m.width - 2).Render(thinkingText)
 		b.WriteString(wrappedThinking + gap)
 	}
@@ -545,7 +846,16 @@ func renderChatInput(m chatModel) string {
 		BorderForeground(lipgloss.Color("63"))
 
 	b.WriteString(cbStyle.Render(m.textarea.View()))
-	helpText := "Type '/help' for commands. Up/Down for history."
+
+	// Combined helper text with mode-specific shortcut
+	var modeHint string
+	if m.currentMode == ModeDev {
+		modeHint = "Ctrl+T: test project"
+	} else {
+		modeHint = "Ctrl+T: dev help"
+	}
+	helpText := fmt.Sprintf("/help for commands | Up/Down: history | %s", modeHint)
+
 	b.WriteString("\n")
 	wrappedHelp := lipgloss.NewStyle().Faint(true).Width(m.width - 2).Render(helpText)
 	b.WriteString(wrappedHelp)
@@ -555,11 +865,27 @@ func renderChatInput(m chatModel) string {
 }
 
 func renderInfoBar(m chatModel) string {
-	// Compact single-line status bar: 📁 Project: default/llamafarm | Session: 7c727f84 | Status: ✓ | localhost:8000
+	// Mode-specific colors and emojis
+	var modeEmoji, modeLabel, bgColor string
+	var currentSessionID string
+
+	if m.currentMode == ModeDev {
+		modeEmoji = "🦙"
+		modeLabel = "DEV MODE"
+		bgColor = "#28a745" // Green
+		currentSessionID = m.devModeCtx.SessionID
+	} else {
+		modeEmoji = "🎯"
+		modeLabel = "PROJECT MODE"
+		bgColor = "#027ffd" // Blue
+		currentSessionID = m.projectModeCtx.SessionID
+	}
 
 	// Project info
 	var project string
-	if m.projectInfo != nil {
+	if m.currentMode == ModeDev {
+		project = "llamafarm/project_seed"
+	} else if m.projectInfo != nil {
 		project = fmt.Sprintf("%s/%s", m.projectInfo.Namespace, m.projectInfo.Project)
 	} else {
 		project = "unknown/unknown"
@@ -567,11 +893,11 @@ func renderInfoBar(m chatModel) string {
 
 	// Session info (truncate to 8 chars for compactness)
 	var session string
-	if sessionID != "" {
-		if len(sessionID) > 8 {
-			session = sessionID[:8]
+	if currentSessionID != "" {
+		if len(currentSessionID) > 8 {
+			session = currentSessionID[:8]
 		} else {
-			session = sessionID
+			session = currentSessionID
 		}
 	} else {
 		session = "none"
@@ -593,14 +919,14 @@ func renderInfoBar(m chatModel) string {
 		serverHost = strings.TrimPrefix(serverHost, "https://")
 	}
 
-	// Build compact status line
-	statusLine := fmt.Sprintf("📁 Project: %s | Session: %s | Status: %s | %s",
-		project, session, statusIcon, serverHost)
+	// Build compact status line with mode indicator
+	statusLine := fmt.Sprintf("%s %s: %s | Session: %s | Status: %s | %s",
+		modeEmoji, modeLabel, project, session, statusIcon, serverHost)
 
-	// Apply single-line styling - simple blue background, no complex layouts
+	// Apply single-line styling with mode-specific background color
 	style := lipgloss.NewStyle().
 		Width(m.width).
-		Background(lipgloss.Color("#027ffd")).
+		Background(lipgloss.Color(bgColor)).
 		Foreground(lipgloss.Color("#ffffff")).
 		PaddingLeft(1).
 		PaddingRight(1)

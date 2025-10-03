@@ -112,12 +112,11 @@ data_processing_strategies:
     - name: "pdf_processing"  # Unique identifier (lowercase, underscores)
       description: "Standard PDF document processing"
       
-      # DirectoryParser configuration (ALWAYS ACTIVE)
-      directory_config:
-        recursive: true  # Scan subdirectories
-        supported_files: ["*.pdf", "*.PDF"]  # Glob patterns for accepted files
-        exclude_patterns: ["*.tmp", ".*"]  # Patterns to exclude
-        max_files: 1000  # Maximum files to process
+    # DirectoryParser configuration (ALWAYS ACTIVE)
+    directory_config:
+      recursive: true  # Scan subdirectories
+      supported_files: ["*.pdf", "*.PDF"]  # Glob patterns for accepted files
+      max_files: 1000  # Maximum files to process
 
     # Parsers now rely on file extensions or include patterns.
     # MIME type hints are handled internally and should not be

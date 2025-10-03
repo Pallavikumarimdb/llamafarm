@@ -3,7 +3,7 @@ from .datasets import router as datasets_router
 from .inference import router as inference_router
 from .health import router as health_router
 from .rag import router as rag_router
-from .examples import router as examples_router
+from .system import upgrades_router
 
 __all__ = [
     "projects_router",
@@ -11,5 +11,5 @@ __all__ = [
     "inference_router",
     "health_router",
     "rag_router",
-    "examples_router",
+    "upgrades_router",
 ]
