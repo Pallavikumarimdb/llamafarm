@@ -96,8 +96,11 @@ bold "Step 4: Review dataset metadata"
 
 bold "Step 5: Process dataset into the vector store"
 info "Processing may take a couple of minutes due to PDF size."
-"${LF_BIN}" datasets process "${DATASET_NAME}" || warn "Processing reported an error; verify the RAG worker logs if ingestion appears incomplete."
-success "Processing complete."
+if "${LF_BIN}" datasets process "${DATASET_NAME}"; then
+  success "Processing complete."
+else
+  fail "Processing failed; check RAG worker logs and retry."
+fi
 
 bold "Step 6: Inspect retrieval results"
 sleep 10

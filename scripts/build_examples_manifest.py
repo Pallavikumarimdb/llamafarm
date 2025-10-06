@@ -17,8 +17,8 @@ def main() -> int:
 
     manifests: list[dict] = []
 
-    # Find all example-level manifest.yaml files
-    for manifest_path in glob(os.path.join(examples_root, "*", "manifest.yaml")):
+    # Find all example-level manifest.yaml files in deterministic order
+    for manifest_path in sorted(glob(os.path.join(examples_root, "*", "manifest.yaml"))):
         try:
             manifest = load_yaml(manifest_path) or {}
             # Enrich minimal listing data for UI

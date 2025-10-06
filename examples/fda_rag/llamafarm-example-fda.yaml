@@ -93,4 +93,7 @@ datasets:
   - name: fda_letters
     database: fda_letters_db
     data_processing_strategy: fda_pdf_processor
-    files: []
+    files:
+      - 81abd139a97521c1e673d2b0c2bc9f701dd72d67edc3108f0d91e5750af6a3c5
+      - ad1def8bec11d53b8888e35561462045aad771804d10ef7b3bf697c667132bbe
+      - e9314cbe6375abc60d9611d5dc7039c8368ee66261afdd0945f2d7df2a5466ef

@@ -48,9 +48,9 @@ export function useImportExampleProject() {
       queryClient.invalidateQueries({
         queryKey: projectKeys.list(variables.namespace),
       })
-      if (data?.project) {
+      if (_data?.project) {
         queryClient.invalidateQueries({
-          queryKey: datasetKeys.list(variables.namespace, data.project),
+          queryKey: datasetKeys.list(variables.namespace, _data.project),
         })
       }
     },

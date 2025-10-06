@@ -62,7 +62,8 @@ bold "Step 1: Confirm CLI connectivity"
 bold "Step 1a: Check RAG worker health"
 health_output="$(${LF_BIN} rag health || true)"
 echo "$health_output"
-if grep -q "celery\s\+degraded" <<<"$health_output"; then
+# Use POSIX character class to match whitespace reliably
+if grep -Eq 'celery[[:space:]]+degraded' <<<"$health_output"; then
   warn "RAG worker appears offline. Start it with './start-local.sh' or 'nx start rag' and rerun this script."
   exit 1
 fi
