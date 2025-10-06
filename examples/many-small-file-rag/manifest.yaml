@@ -20,5 +20,3 @@ process_after_ingest: true
 retrieval:
   database: small_pdfs_db
   top_k: 8
-
-

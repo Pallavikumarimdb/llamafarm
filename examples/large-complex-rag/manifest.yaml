@@ -20,5 +20,3 @@ process_after_ingest: true
 retrieval:
   database: large_docs_db
   top_k: 8
-
-
