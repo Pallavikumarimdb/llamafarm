@@ -7,7 +7,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useUpgradeAvailability } from '@/hooks/useUpgradeAvailability'
-import { useToast } from '@/components/ui/toast'
 
 type Props = {
   open: boolean
@@ -21,11 +20,14 @@ function detectOS(): 'windows' | 'mac_linux' {
 }
 
 export function UpgradeModal({ open, onOpenChange }: Props) {
-  const { currentVersion, latestVersion, refreshLatest } =
-    useUpgradeAvailability()
+  const {
+    currentVersion,
+    latestVersion,
+    refreshLatest,
+    upgradeAvailable,
+    releasesUrl,
+  } = useUpgradeAvailability()
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
-  const [verifying, setVerifying] = useState(false)
-  const { toast } = useToast()
   const [imageTag, setImageTag] = useState<string | null>(null)
 
   // Prefer injected image tag if available
@@ -82,19 +84,12 @@ export function UpgradeModal({ open, onOpenChange }: Props) {
     } catch {}
   }
 
-  const verify = async () => {
-    setVerifying(true)
-    try {
-      await refreshLatest()
-      const cli = (imageTag as string) || currentVersion || 'unknown'
-      const current = latestVersion ? `Latest release: v${latestVersion}` : ''
-      toast({
-        message: `Verified. CLI: ${cli}${current ? ` · ${current}` : ''}`,
-      })
-    } finally {
-      setVerifying(false)
-    }
-  }
+  // Auto-refresh latest when the modal opens
+  useEffect(() => {
+    if (!open) return
+    const abort = new AbortController()
+    refreshLatest().finally(() => abort.abort())
+  }, [open, refreshLatest])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -116,40 +111,50 @@ export function UpgradeModal({ open, onOpenChange }: Props) {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Upgrade CLI</div>
-            <div className="rounded-md border border-border divide-y">
-              {commands.cli.map((c, i) => (
-                <div
-                  key={i}
-                  className="p-3 flex items-center justify-between gap-2"
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground">
-                      {c.label}
-                    </div>
-                    <pre className="mt-1 text-xs font-mono whitespace-pre-wrap break-all text-foreground">
-                      {c.cmd}
-                    </pre>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => copy(c.cmd, i)}
-                    className={`h-8 px-2 rounded-md border text-xs hover:bg-accent/30 ${copiedIdx === i ? 'border-teal-400 text-teal-400' : 'border-input'}`}
-                  >
-                    {copiedIdx === i ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              ))}
+          {!upgradeAvailable ? (
+            <div className="flex items-center justify-between rounded-md border border-teal-500/40 bg-teal-500/10 text-teal-400 px-4 py-3">
+              <div className="text-sm font-medium">You're up to date!</div>
+              <a href={releasesUrl} target="_blank" rel="noreferrer">
+                <Button>View release notes</Button>
+              </a>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Upgrade LlamaFarm</div>
+                <div className="rounded-md border border-border divide-y">
+                  {commands.cli.map((c, i) => (
+                    <div
+                      key={i}
+                      className="p-3 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">
+                          {c.label}
+                        </div>
+                        <pre className="mt-1 text-xs font-mono whitespace-pre-wrap break-all text-foreground">
+                          {c.cmd}
+                        </pre>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copy(c.cmd, i)}
+                        className={`h-8 px-2 rounded-md border text-xs hover:bg-accent/30 ${copiedIdx === i ? 'border-teal-400 text-teal-400' : 'border-input'}`}
+                      >
+                        {copiedIdx === i ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={verify} disabled={verifying}>
-              {verifying ? 'Verifying…' : 'Verify upgrade'}
-            </Button>
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
-          </div>
+              <div className="flex items-center justify-end gap-2">
+                <a href={releasesUrl} target="_blank" rel="noreferrer">
+                  <Button>View release notes</Button>
+                </a>
+              </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

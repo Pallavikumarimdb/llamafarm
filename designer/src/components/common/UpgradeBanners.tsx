@@ -60,6 +60,13 @@ export function ProjectUpgradeBanner() {
     _dismissCounter,
   } = useUpgradeAvailability()
 
+  // Auto-dismiss when user is up to date (e.g., after successful upgrade)
+  // Also close the modal if it's open.
+  if (!upgradeAvailable) {
+    if (!isDismissedFor('project')) dismiss('project')
+    if (open) setOpen(false)
+  }
+
   const shouldShow = useMemo(() => {
     if (!upgradeAvailable) return false
     return !isDismissedFor('project')
