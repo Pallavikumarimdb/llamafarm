@@ -35,6 +35,31 @@ export function getCurrentVersion(): string {
   return raw || '0.0.0'
 }
 
+/**
+ * Returns the injected image tag if provided by the runtime via either
+ * import.meta.env.VITE_APP_IMAGE_TAG (Vite) or window.ENV.VITE_APP_IMAGE_TAG (injected at runtime).
+ * Returns null if not present.
+ */
+export function getInjectedImageTag(): string | null {
+  try {
+    const viteEnv = (import.meta as any)?.env?.VITE_APP_IMAGE_TAG as
+      | string
+      | undefined
+    if (viteEnv && typeof viteEnv === 'string' && viteEnv.trim() !== '') {
+      return viteEnv
+    }
+  } catch {}
+  try {
+    const winEnv = (window as any)?.ENV?.VITE_APP_IMAGE_TAG as
+      | string
+      | undefined
+    if (winEnv && typeof winEnv === 'string' && winEnv.trim() !== '') {
+      return winEnv
+    }
+  } catch {}
+  return null
+}
+
 export function normalizeVersion(version: string | null | undefined): string {
   if (!version) return '0.0.0'
   return version.startsWith('v') ? version.slice(1) : version

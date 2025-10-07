@@ -20,6 +20,7 @@ import { getProjectsList } from '../utils/projectConstants'
 import { useQueryClient } from '@tanstack/react-query'
 import { VersionDetailsDialog } from './common/VersionDetailsDialog'
 import UpgradeModal from './common/UpgradeModal'
+import { getInjectedImageTag } from '../utils/versionUtils'
 import { projectKeys } from '../hooks/useProjects'
 
 type HeaderProps = { currentVersion?: string }
@@ -63,23 +64,16 @@ function Header({ currentVersion }: HeaderProps) {
   // Resolve effective version: prefer injected image tag, then prop
   useEffect(() => {
     let alive = true
-    const resolve = async () => {
-      // Prefer image tag from injected ENV (e.g., v0.0.6)
-      try {
-        const env: any = (window as any)?.ENV || {}
-        const tag: string | undefined = env?.VITE_APP_IMAGE_TAG
-        if (tag && typeof tag === 'string' && tag.trim() !== '') {
-          const normalized = tag.startsWith('v') ? tag.slice(1) : tag
-          if (alive) setEffectiveVersion(normalized)
-          return
-        }
-      } catch {}
-
-      // Final fallback to incoming prop
-      const normalized = (currentVersion || '0.0.0').replace(/^v/, '')
+    const tag = getInjectedImageTag()
+    if (tag && typeof tag === 'string' && tag.trim() !== '') {
+      const normalized = tag.startsWith('v') ? tag.slice(1) : tag
       if (alive) setEffectiveVersion(normalized)
+      return () => {
+        alive = false
+      }
     }
-    resolve()
+    const normalized = (currentVersion || '0.0.0').replace(/^v/, '')
+    if (alive) setEffectiveVersion(normalized)
     return () => {
       alive = false
     }

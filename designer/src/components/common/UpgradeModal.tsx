@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useUpgradeAvailability } from '@/hooks/useUpgradeAvailability'
+import { getInjectedImageTag } from '@/utils/versionUtils'
 
 type Props = {
   open: boolean
@@ -30,20 +31,11 @@ export function UpgradeModal({ open, onOpenChange }: Props) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [imageTag, setImageTag] = useState<string | null>(null)
 
-  // Prefer injected image tag if available
+  // Prefer injected image tag if available (checks both import.meta.env and window.ENV)
   useEffect(() => {
     let alive = true
-    const run = async () => {
-      try {
-        const env = (window as any)?.ENV || {}
-        const tag =
-          typeof env.VITE_APP_IMAGE_TAG === 'string'
-            ? env.VITE_APP_IMAGE_TAG
-            : null
-        if (alive) setImageTag(tag)
-      } catch {}
-    }
-    run()
+    const tag = getInjectedImageTag()
+    if (alive) setImageTag(tag)
     return () => {
       alive = false
     }
@@ -84,11 +76,14 @@ export function UpgradeModal({ open, onOpenChange }: Props) {
     } catch {}
   }
 
-  // Auto-refresh latest when the modal opens
+  // Auto-refresh latest when the modal opens, and cancel on close/unmount
   useEffect(() => {
     if (!open) return
     const abort = new AbortController()
-    refreshLatest().finally(() => abort.abort())
+    refreshLatest(abort.signal)
+    return () => {
+      abort.abort()
+    }
   }, [open, refreshLatest])
 
   return (

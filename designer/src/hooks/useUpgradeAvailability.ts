@@ -38,7 +38,9 @@ export function useUpgradeAvailability() {
           storeLatestRelease(mapped)
           setCache({ info: mapped, checkedAt: Date.now() })
         }
-      } catch {}
+      } catch (error) {
+        console.error('Failed to fetch version info:', error)
+      }
       setIsLoading(false)
     }
     run()
@@ -69,11 +71,10 @@ export function useUpgradeAvailability() {
 
   const releasesUrl = info?.htmlUrl || getGithubReleasesUrl()
 
-  const refreshLatest = async () => {
-    const abort = new AbortController()
+  const refreshLatest = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true)
-      const res = await getVersionCheck(abort.signal)
+      const res = await getVersionCheck(signal)
       const latestVersion = res?.latest_version || ''
       const htmlUrl = res?.release_url || getGithubReleasesUrl()
       const publishedAt = res?.published_at
@@ -82,9 +83,10 @@ export function useUpgradeAvailability() {
         storeLatestRelease(mapped)
         setCache({ info: mapped, checkedAt: Date.now() })
       }
+    } catch (error) {
+      console.error('Failed to fetch version info:', error)
     } finally {
       setIsLoading(false)
-      abort.abort()
     }
   }
 

@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useUpgradeAvailability } from '@/hooks/useUpgradeAvailability'
+import { getInjectedImageTag } from '@/utils/versionUtils'
 
 type Props = {
   open: boolean
@@ -26,21 +27,14 @@ export function VersionDetailsDialog({
 
   useEffect(() => {
     let alive = true
-    const run = async () => {
-      try {
-        const env = (window as any)?.ENV || {}
-        const tag =
-          typeof env.VITE_APP_IMAGE_TAG === 'string'
-            ? env.VITE_APP_IMAGE_TAG
-            : null
-        if (tag && alive) {
-          setEffectiveVersion(tag)
-          return
-        }
-      } catch {}
-      if (alive) setEffectiveVersion(null)
+    const tag = getInjectedImageTag()
+    if (tag && alive) {
+      setEffectiveVersion(tag)
+      return () => {
+        alive = false
+      }
     }
-    run()
+    if (alive) setEffectiveVersion(null)
     return () => {
       alive = false
     }

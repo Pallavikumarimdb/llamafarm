@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useUpgradeAvailability } from '@/hooks/useUpgradeAvailability'
 import UpgradeModal from '@/components/common/UpgradeModal'
 
@@ -62,10 +62,12 @@ export function ProjectUpgradeBanner() {
 
   // Auto-dismiss when user is up to date (e.g., after successful upgrade)
   // Also close the modal if it's open.
-  if (!upgradeAvailable) {
-    if (!isDismissedFor('project')) dismiss('project')
-    if (open) setOpen(false)
-  }
+  useEffect(() => {
+    if (!upgradeAvailable) {
+      if (!isDismissedFor('project')) dismiss('project')
+      if (open) setOpen(false)
+    }
+  }, [upgradeAvailable, isDismissedFor, dismiss, open])
 
   const shouldShow = useMemo(() => {
     if (!upgradeAvailable) return false
