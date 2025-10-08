@@ -65,14 +65,12 @@ function Header({ currentVersion }: HeaderProps) {
   useEffect(() => {
     let alive = true
     const tag = getInjectedImageTag()
-    if (tag && typeof tag === 'string' && tag.trim() !== '') {
-      const normalized = tag.startsWith('v') ? tag.slice(1) : tag
-      if (alive) setEffectiveVersion(normalized)
-      return () => {
-        alive = false
-      }
-    }
-    const normalized = (currentVersion || '0.0.0').replace(/^v/, '')
+    const normalized =
+      tag && typeof tag === 'string' && tag.trim() !== ''
+        ? tag.startsWith('v')
+          ? tag.slice(1)
+          : tag
+        : (currentVersion || '0.0.0').replace(/^v/, '')
     if (alive) setEffectiveVersion(normalized)
     return () => {
       alive = false

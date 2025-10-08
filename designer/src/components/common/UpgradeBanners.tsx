@@ -12,6 +12,15 @@ export function HomeUpgradeBanner() {
     _dismissCounter,
   } = useUpgradeAvailability()
 
+  // Auto-dismiss when user is up to date (e.g., after successful upgrade)
+  // Also close the modal if it's open.
+  useEffect(() => {
+    if (!upgradeAvailable) {
+      if (!isDismissedFor('home')) dismiss('home')
+      if (open) setOpen(false)
+    }
+  }, [upgradeAvailable, isDismissedFor, dismiss, open])
+
   const shouldShow = useMemo(() => {
     if (!upgradeAvailable) return false
     return !isDismissedFor('home')

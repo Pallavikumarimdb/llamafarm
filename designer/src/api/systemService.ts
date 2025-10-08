@@ -18,8 +18,14 @@ export type VersionCheckResponse = {
 export async function getVersionCheck(
   signal?: AbortSignal
 ): Promise<VersionCheckResponse> {
-  const controller = new AbortController()
-  const usedSignal = signal || controller.signal
+  let controller: AbortController | undefined
+  let usedSignal: AbortSignal
+  if (signal) {
+    usedSignal = signal
+  } else {
+    controller = new AbortController()
+    usedSignal = controller.signal
+  }
   try {
     const res = await apiClient.get<VersionCheckResponse>(
       '/system/version-check',
@@ -29,6 +35,6 @@ export async function getVersionCheck(
     )
     return res.data
   } finally {
-    if (!signal) controller.abort()
+    if (controller) controller.abort()
   }
 }
