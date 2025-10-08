@@ -19,6 +19,8 @@ import { getCurrentNamespace } from '../utils/namespaceUtils'
 import { getProjectsList } from '../utils/projectConstants'
 import { useQueryClient } from '@tanstack/react-query'
 import { VersionDetailsDialog } from './common/VersionDetailsDialog'
+import UpgradeModal from './common/UpgradeModal'
+import { getInjectedImageTag } from '../utils/versionUtils'
 import { projectKeys } from '../hooks/useProjects'
 import { Button } from './ui/button'
 
@@ -31,6 +33,8 @@ function Header({ currentVersion }: HeaderProps) {
   const isSelected = location.pathname.split('/')[2]
   const { theme, setTheme } = useTheme()
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
+  const [effectiveVersion, setEffectiveVersion] = useState<string>('0.0.0')
   const [isMobile, setIsMobile] = useState(false)
   const [mobileView, setMobileView] = useState<'chat' | 'project'>('project')
 
@@ -116,6 +120,21 @@ function Header({ currentVersion }: HeaderProps) {
     models: { label: 'Models', icon: 'model', path: '/chat/models' },
     test: { label: 'Test', icon: 'test', path: '/chat/test' },
   }
+  // Resolve effective version: prefer injected image tag, then prop
+  useEffect(() => {
+    let alive = true
+    const tag = getInjectedImageTag()
+    const normalized =
+      tag && typeof tag === 'string' && tag.trim() !== ''
+        ? tag.startsWith('v')
+          ? tag.slice(1)
+          : tag
+        : (currentVersion || '0.0.0').replace(/^v/, '')
+    if (alive) setEffectiveVersion(normalized)
+    return () => {
+      alive = false
+    }
+  }, [currentVersion])
 
   // Keep activeProject in sync with localStorage when route changes (e.g., from Projects click)
   useEffect(() => {
@@ -395,7 +414,7 @@ function Header({ currentVersion }: HeaderProps) {
               onClick={() => setVersionDialogOpen(true)}
               title="Version details"
             >
-              <span className="font-mono">v{currentVersion || '0.0.0'}</span>
+              <span className="font-mono">v{effectiveVersion}</span>
             </button>
           ) : null}
           <div className="flex rounded-lg overflow-hidden border border-border">
@@ -498,6 +517,14 @@ function Header({ currentVersion }: HeaderProps) {
       <VersionDetailsDialog
         open={versionDialogOpen}
         onOpenChange={setVersionDialogOpen}
+        onRequestUpgrade={() => {
+          setVersionDialogOpen(false)
+          setUpgradeModalOpen(true)
+        }}
+      />
+      <UpgradeModal
+        open={upgradeModalOpen}
+        onOpenChange={setUpgradeModalOpen}
       />
       {/* Modal is rendered by ProjectModalRoot in App */}
     </header>
