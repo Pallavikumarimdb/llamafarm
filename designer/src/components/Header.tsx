@@ -20,6 +20,7 @@ import { getProjectsList } from '../utils/projectConstants'
 import { useQueryClient } from '@tanstack/react-query'
 import { VersionDetailsDialog } from './common/VersionDetailsDialog'
 import { projectKeys } from '../hooks/useProjects'
+import { Button } from './ui/button'
 
 type HeaderProps = { currentVersion?: string }
 
@@ -30,6 +31,8 @@ function Header({ currentVersion }: HeaderProps) {
   const isSelected = location.pathname.split('/')[2]
   const { theme, setTheme } = useTheme()
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobileView, setMobileView] = useState<'chat' | 'project'>('project')
 
   // Project dropdown state
   const [isProjectOpen, setIsProjectOpen] = useState(false)
@@ -56,6 +59,63 @@ function Header({ currentVersion }: HeaderProps) {
     // Show middle nav only on /chat routes
     setIsBuilding(location.pathname.startsWith('/chat'))
   }, [location.pathname])
+
+  // Detect mobile
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)')
+    const onChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      const matches = 'matches' in e ? e.matches : (e as MediaQueryList).matches
+      setIsMobile(matches)
+    }
+    onChange(mql)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
+  // Sync with Chat mobile view via custom events
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      try {
+        const v = (e as CustomEvent<'chat' | 'project'>).detail
+        if (v === 'chat' || v === 'project') setMobileView(v)
+      } catch {}
+    }
+    window.addEventListener(
+      'lf:mobile-view-changed',
+      onChanged as EventListener
+    )
+    return () =>
+      window.removeEventListener(
+        'lf:mobile-view-changed',
+        onChanged as EventListener
+      )
+  }, [])
+
+  const emitSetMobileView = (v: 'chat' | 'project') => {
+    setMobileView(v)
+    try {
+      window.dispatchEvent(
+        new CustomEvent('lf:set-mobile-view', { detail: v }) as any
+      )
+    } catch {}
+  }
+
+  // Mapping for mobile project dropdown (labels + icons)
+  const pageDefs: Record<
+    string,
+    { label: string; icon: string; path: string }
+  > = {
+    dashboard: {
+      label: 'Dashboard',
+      icon: 'dashboard',
+      path: '/chat/dashboard',
+    },
+    prompt: { label: 'Prompts', icon: 'prompt', path: '/chat/prompt' },
+    data: { label: 'Data', icon: 'data', path: '/chat/data' },
+    rag: { label: 'RAG', icon: 'rag', path: '/chat/rag' },
+    models: { label: 'Models', icon: 'model', path: '/chat/models' },
+    test: { label: 'Test', icon: 'test', path: '/chat/test' },
+  }
 
   // Keep activeProject in sync with localStorage when route changes (e.g., from Projects click)
   useEffect(() => {
@@ -257,7 +317,7 @@ function Header({ currentVersion }: HeaderProps) {
         </div>
 
         {isBuilding && (
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4 z-10">
+          <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-4 z-10">
             <button
               className={`w-full flex items-center justify-center gap-2 transition-colors rounded-lg p-2 ${
                 isSelected === 'dashboard'
@@ -366,6 +426,74 @@ function Header({ currentVersion }: HeaderProps) {
           </div>
         </div>
       </div>
+
+      {/* Mobile chat/project switcher in header when on /chat */}
+      {isBuilding && isMobile ? (
+        <div className="md:hidden absolute left-1/2 -translate-x-1/2 top-1.5 z-10">
+          <div className="rounded-full border border-border bg-card shadow p-1 flex gap-1">
+            <Button
+              variant={mobileView === 'chat' ? 'secondary' : 'ghost'}
+              size="sm"
+              className={`rounded-full px-4 ${
+                mobileView === 'chat'
+                  ? 'bg-primary text-primary-foreground'
+                  : ''
+              }`}
+              onClick={() => emitSetMobileView('chat')}
+              aria-pressed={mobileView === 'chat'}
+            >
+              Chat
+            </Button>
+            <Button
+              variant={mobileView === 'project' ? 'secondary' : 'ghost'}
+              size="sm"
+              className={`rounded-full px-4 ${
+                mobileView === 'project'
+                  ? 'bg-primary text-primary-foreground'
+                  : ''
+              }`}
+              onClick={() => emitSetMobileView('project')}
+              aria-pressed={mobileView === 'project'}
+            >
+              Project
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Mobile second-row nav when Project view is selected */}
+      {isBuilding && isMobile && mobileView === 'project' ? (
+        <div className="md:hidden fixed top-12 left-0 right-0 z-40 bg-background border-b border-border">
+          <div className="py-2 px-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-full px-4 py-2 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 font-serif text-base">
+                    <FontIcon
+                      type={(pageDefs[isSelected]?.icon || 'dashboard') as any}
+                      className="w-5 h-5"
+                    />
+                    {pageDefs[isSelected]?.label || 'Dashboard'}
+                  </span>
+                  <FontIcon type="chevron-down" className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-[calc(100vw-24px)] max-w-none rounded-lg border border-border bg-popover text-popover-foreground">
+                {Object.values(pageDefs).map(def => (
+                  <DropdownMenuItem
+                    key={def.path}
+                    onClick={() => navigate(def.path)}
+                    className="flex items-center gap-2"
+                  >
+                    <FontIcon type={def.icon as any} className="w-4 h-4" />
+                    <span>{def.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      ) : null}
       {/* Version dialog mounted at header scope */}
       <VersionDetailsDialog
         open={versionDialogOpen}

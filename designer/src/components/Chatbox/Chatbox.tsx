@@ -156,23 +156,34 @@ function Chatbox({
   return (
     <div className="w-full h-full flex flex-col transition-colors bg-card text-foreground">
       <div
-        className={`flex ${isPanelOpen ? 'justify-between items-center mr-1 mt-1' : 'justify-center mt-3'}`}
+        className={`relative flex ${isPanelOpen ? 'justify-between items-center mr-1 mt-1' : 'justify-center mt-3'}`}
       >
-        {isPanelOpen && (
-          <button
-            onClick={handleClearChat}
-            disabled={isClearing}
-            className="text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isClearing ? 'Clearing...' : 'Clear'}
-          </button>
-        )}
-        <FontIcon
-          isButton
-          type={isPanelOpen ? 'close-panel' : 'open-panel'}
-          className="w-6 h-6 text-primary hover:opacity-80"
-          handleOnClick={() => setIsPanelOpen(!isPanelOpen)}
-        />
+        <div className="flex items-center gap-2">
+          {isPanelOpen && (
+            <button
+              onClick={handleClearChat}
+              disabled={isClearing}
+              className="text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isClearing ? 'Clearing...' : 'Clear'}
+            </button>
+          )}
+        </div>
+        {/* Centered project title on mobile */}
+        <span className="md:hidden absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground truncate max-w-[60vw] pointer-events-none">
+          {typeof window !== 'undefined'
+            ? localStorage.getItem('activeProject') || ''
+            : ''}
+        </span>
+        {/* Hide collapse toggle on mobile when chat is full-screen */}
+        <div className="hidden md:block">
+          <FontIcon
+            isButton
+            type={isPanelOpen ? 'close-panel' : 'open-panel'}
+            className="w-6 h-6 text-primary hover:opacity-80"
+            handleOnClick={() => setIsPanelOpen(!isPanelOpen)}
+          />
+        </div>
       </div>
       {isDiagnosing && (
         <div className="mx-4 mb-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -189,7 +200,7 @@ function Chatbox({
       )}
 
       <div
-        className={`flex flex-col h-full p-4 overflow-hidden ${isPanelOpen ? 'flex' : 'hidden'}`}
+        className={`flex flex-col h-full p-4 pt-2 overflow-hidden ${isPanelOpen ? 'flex' : 'hidden'}`}
       >
         <div
           ref={listRef}
@@ -206,7 +217,7 @@ function Chatbox({
           )}
           <div ref={endRef} />
         </div>
-        <div className="flex flex-col gap-3 p-3 rounded-lg bg-secondary">
+        <div className="flex flex-col gap-3 p-3 rounded-lg bg-secondary mt-auto sticky bottom-4">
           <textarea
             value={inputValue}
             onChange={e => updateInput(e.target.value)}
