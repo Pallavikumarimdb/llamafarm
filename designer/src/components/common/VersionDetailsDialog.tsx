@@ -26,17 +26,13 @@ export function VersionDetailsDialog({
   const [effectiveVersion, setEffectiveVersion] = useState<string | null>(null)
 
   useEffect(() => {
-    let alive = true
+    let isMounted = true
     const tag = getInjectedImageTag()
-    if (tag && alive) {
-      setEffectiveVersion(tag)
-      return () => {
-        alive = false
-      }
+    if (isMounted) {
+      setEffectiveVersion(tag ? tag : null)
     }
-    if (alive) setEffectiveVersion(null)
     return () => {
-      alive = false
+      isMounted = false
     }
   }, [])
 
