@@ -11,8 +11,15 @@ export function useMediaQuery(query: string): boolean {
         setMatches(next)
       }
       onChange(mql)
-      mql.addEventListener('change', onChange)
-      return () => mql.removeEventListener('change', onChange)
+      // Fallback for older browsers where MediaQueryList uses addListener/removeListener
+      if (typeof (mql as any).addEventListener === 'function') {
+        mql.addEventListener('change', onChange)
+        return () => mql.removeEventListener('change', onChange)
+      } else if (typeof (mql as any).addListener === 'function') {
+        ;(mql as any).addListener(onChange)
+        return () => (mql as any).removeListener(onChange)
+      }
+      return
     } catch {
       setMatches(false)
       return

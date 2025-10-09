@@ -104,13 +104,14 @@ function ImportSampleDatasetModal({ open, onOpenChange, onImport }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-3xl -translate-y-[50%] md:-translate-y-[55%] h-[100dvh] sm:h-auto max-h-[100vh] md:max-h-[85vh] overflow-hidden flex flex-col"
+        className="sm:max-w-3xl -translate-y-[50%] md:-translate-y-[55%] h-[100dvh] sm:h-auto max-h-[100vh] md:max-h-[85vh] overflow-hidden"
         onOpenAutoFocus={e => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>Import sample dataset</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3 flex-1 overflow-auto">
+        {/* Use grid rows so the scroll region can grow properly inside DialogContent's inherent grid */}
+        <div className="grid grid-rows-[auto_1fr] gap-3 min-h-0">
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -144,8 +145,8 @@ function ImportSampleDatasetModal({ open, onOpenChange, onImport }: Props) {
               </button>
             ))}
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-[40vh]">
+          {/* Scroll region */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 min-h-0 overflow-auto">
             {filtered.length === 0 ? (
               <div className="col-span-full text-sm text-muted-foreground p-2">
                 No datasets match your search.

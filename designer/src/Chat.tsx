@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Chatbox from './components/Chatbox/Chatbox'
 import { Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { ProjectUpgradeBanner } from './components/common/UpgradeBanners'
@@ -21,6 +21,8 @@ function Chat() {
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const dragRafRef = useRef<number | null>(null)
   const chatLeftRef = useRef<number>(0)
+  const onDragFnRef = useRef<(e: MouseEvent) => void>(() => {})
+  const stopDragFnRef = useRef<() => void>(() => {})
 
   // Handle initial message from URL parameters (from home page project creation)
   useEffect(() => {
@@ -63,77 +65,101 @@ function Chat() {
     setChatWidthPx(prev => (prev == null ? clamped : prev))
   }, [isMobile, isPanelOpen])
 
-  // Cleanup drag listeners on unmount
+  // Cleanup drag listeners and body styles on unmount
   useEffect(() => {
     return () => {
-      document.removeEventListener('mousemove', onDrag)
-      document.removeEventListener('mouseup', stopDrag)
+      if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+      document.body.style.cursor = ''
+      ;(document.body.style as any).userSelect = ''
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [])
 
-  const startDrag: React.MouseEventHandler<HTMLDivElement> = e => {
-    e.preventDefault()
-    if (isMobile || !isPanelOpen) return
-    isDraggingRef.current = true
-    setIsDragging(true)
-    if (chatPanelRef.current) {
-      chatLeftRef.current = chatPanelRef.current.getBoundingClientRect().left
-    }
-    document.body.style.cursor = 'col-resize'
-    ;(document.body.style as any).userSelect = 'none'
-    document.addEventListener('mousemove', onDrag)
-    document.addEventListener('mouseup', stopDrag)
-  }
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    onDragFnRef.current(e)
+  }, [])
 
-  const onDrag = (e: MouseEvent) => {
-    if (!isDraggingRef.current || !chatPanelRef.current) return
-    const minPx = 360
-    const maxPx = 820
-    const proposed = e.clientX - chatLeftRef.current
-    const next = Math.max(minPx, Math.min(maxPx, proposed))
-    if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current)
-    dragRafRef.current = requestAnimationFrame(() => {
-      if (chatPanelRef.current) chatPanelRef.current.style.width = `${next}px`
-    })
-  }
+  const handleMouseUp = useCallback(() => {
+    stopDragFnRef.current()
+  }, [])
 
-  const stopDrag = () => {
-    isDraggingRef.current = false
-    setIsDragging(false)
-    if (chatPanelRef.current) {
-      const rect = chatPanelRef.current.getBoundingClientRect()
+  useEffect(() => {
+    onDragFnRef.current = (e: MouseEvent) => {
+      if (!isDraggingRef.current || !chatPanelRef.current) return
       const minPx = 360
       const maxPx = 820
-      const finalW = Math.max(minPx, Math.min(maxPx, rect.width))
-      setChatWidthPx(finalW)
+      const proposed = e.clientX - chatLeftRef.current
+      const next = Math.max(minPx, Math.min(maxPx, proposed))
+      if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = requestAnimationFrame(() => {
+        if (chatPanelRef.current) chatPanelRef.current.style.width = `${next}px`
+      })
     }
-    if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current)
-    dragRafRef.current = null
-    document.body.style.cursor = ''
-    ;(document.body.style as any).userSelect = ''
-    document.removeEventListener('mousemove', onDrag)
-    document.removeEventListener('mouseup', stopDrag)
-  }
+
+    stopDragFnRef.current = () => {
+      isDraggingRef.current = false
+      setIsDragging(false)
+      if (chatPanelRef.current) {
+        const rect = chatPanelRef.current.getBoundingClientRect()
+        const minPx = 360
+        const maxPx = 820
+        const finalW = Math.max(minPx, Math.min(maxPx, rect.width))
+        setChatWidthPx(finalW)
+      }
+      if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+      document.body.style.cursor = ''
+      ;(document.body.style as any).userSelect = ''
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [handleMouseMove, handleMouseUp])
+
+  const startDrag: React.MouseEventHandler<HTMLDivElement> = useCallback(
+    e => {
+      e.preventDefault()
+      if (isMobile || !isPanelOpen) return
+      isDraggingRef.current = true
+      setIsDragging(true)
+      if (chatPanelRef.current) {
+        chatLeftRef.current = chatPanelRef.current.getBoundingClientRect().left
+      }
+      document.body.style.cursor = 'col-resize'
+      ;(document.body.style as any).userSelect = 'none'
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    },
+    [isMobile, isPanelOpen, handleMouseMove, handleMouseUp]
+  )
 
   // Auto-collapse chat panel on mid-width screens to avoid over-squeezing project pane
   const wasOpenBeforeAutoCollapseRef = useRef<boolean>(true)
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 1100px)')
-    const onChange = (e: MediaQueryListEvent) => {
+    const onChange = (e: MediaQueryListEvent | MediaQueryList) => {
       if (isMobile) return
-      if (e.matches) {
-        // Save current open state, then collapse
+      const matches = 'matches' in e ? e.matches : (e as MediaQueryList).matches
+      if (matches) {
         wasOpenBeforeAutoCollapseRef.current = isPanelOpen
         setIsPanelOpen(false)
         autoCollapsedRef.current = true
       } else {
-        // Restore to previously open state when widening
         setIsPanelOpen(wasOpenBeforeAutoCollapseRef.current)
         autoCollapsedRef.current = false
       }
     }
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
+    // Run once on mount so desktops starting ≤1100px auto-collapse
+    onChange(mql)
+    if (typeof (mql as any).addEventListener === 'function') {
+      mql.addEventListener('change', onChange as EventListener)
+      return () => mql.removeEventListener('change', onChange as EventListener)
+    } else if (typeof (mql as any).addListener === 'function') {
+      ;(mql as any).addListener(onChange)
+      return () => (mql as any).removeListener(onChange)
+    }
+    return
   }, [isMobile, isPanelOpen])
 
   // Track user's last explicit preference for restoration
