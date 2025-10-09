@@ -142,10 +142,12 @@ function Chat() {
       if (isMobile) return
       const matches = 'matches' in e ? e.matches : (e as MediaQueryList).matches
       if (matches) {
-        wasOpenBeforeAutoCollapseRef.current = isPanelOpen
+        // Save the user's current preference before auto-collapsing
+        wasOpenBeforeAutoCollapseRef.current = prevPanelOpenRef.current
         setIsPanelOpen(false)
         autoCollapsedRef.current = true
       } else {
+        // Restore the prior preference when leaving the constrained width
         setIsPanelOpen(wasOpenBeforeAutoCollapseRef.current)
         autoCollapsedRef.current = false
       }
@@ -160,7 +162,7 @@ function Chat() {
       return () => (mql as any).removeListener(onChange)
     }
     return
-  }, [isMobile, isPanelOpen])
+  }, [isMobile])
 
   // Track user's last explicit preference for restoration
   useEffect(() => {
