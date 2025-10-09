@@ -23,6 +23,7 @@ import UpgradeModal from './common/UpgradeModal'
 import { getInjectedImageTag } from '../utils/versionUtils'
 import { projectKeys } from '../hooks/useProjects'
 import { Button } from './ui/button'
+import { useMobileView } from '../contexts/MobileViewContext'
 
 type HeaderProps = { currentVersion?: string }
 
@@ -35,8 +36,7 @@ function Header({ currentVersion }: HeaderProps) {
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
   const [effectiveVersion, setEffectiveVersion] = useState<string>('0.0.0')
-  const [isMobile, setIsMobile] = useState(false)
-  const [mobileView, setMobileView] = useState<'chat' | 'project'>('project')
+  const { isMobile, mobileView, markUserChoice } = useMobileView()
 
   // Project dropdown state
   const [isProjectOpen, setIsProjectOpen] = useState(false)
@@ -64,44 +64,8 @@ function Header({ currentVersion }: HeaderProps) {
     setIsBuilding(location.pathname.startsWith('/chat'))
   }, [location.pathname])
 
-  // Detect mobile
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 767px)')
-    const onChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      const matches = 'matches' in e ? e.matches : (e as MediaQueryList).matches
-      setIsMobile(matches)
-    }
-    onChange(mql)
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
-
-  // Sync with Chat mobile view via custom events
-  useEffect(() => {
-    const onChanged = (e: Event) => {
-      try {
-        const v = (e as CustomEvent<'chat' | 'project'>).detail
-        if (v === 'chat' || v === 'project') setMobileView(v)
-      } catch {}
-    }
-    window.addEventListener(
-      'lf:mobile-view-changed',
-      onChanged as EventListener
-    )
-    return () =>
-      window.removeEventListener(
-        'lf:mobile-view-changed',
-        onChanged as EventListener
-      )
-  }, [])
-
   const emitSetMobileView = (v: 'chat' | 'project') => {
-    setMobileView(v)
-    try {
-      window.dispatchEvent(
-        new CustomEvent('lf:set-mobile-view', { detail: v }) as any
-      )
-    } catch {}
+    markUserChoice(v)
   }
 
   // Mapping for mobile project dropdown (labels + icons)

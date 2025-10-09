@@ -4,6 +4,7 @@ import { Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { ProjectUpgradeBanner } from './components/common/UpgradeBanners'
 import { decodeMessageFromUrl } from './utils/homePageUtils'
 // import { Button } from './components/ui/button'
+import { useMobileView } from './contexts/MobileViewContext'
 
 function Chat() {
   const [isPanelOpen, setIsPanelOpen] = useState<boolean>(true)
@@ -11,12 +12,9 @@ function Chat() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const prevPanelOpenRef = useRef<boolean>(true)
-  const [isMobile, setIsMobile] = useState<boolean>(false)
-  const [mobileView, setMobileView] = useState<'chat' | 'project'>('project')
+  const { isMobile, mobileView, setMobileView } = useMobileView()
   // Track whether we auto-collapsed due to mid-width constraint
   const autoCollapsedRef = useRef<boolean>(false)
-  // Tracks if the user explicitly chose mobile view this session
-  const mobileUserChoiceRef = useRef<'chat' | 'project' | null>(null)
   const chatPanelRef = useRef<HTMLDivElement | null>(null)
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
   const isDraggingRef = useRef<boolean>(false)
@@ -53,17 +51,7 @@ function Chat() {
     }
   }, [location.pathname])
 
-  // Detect mobile view (match md breakpoint ~ 768px)
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 767px)')
-    const onChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      const matches = 'matches' in e ? e.matches : (e as MediaQueryList).matches
-      setIsMobile(matches)
-    }
-    onChange(mql)
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
+  // Mobile detection is provided by context
 
   // Initialize default chat width (25% of viewport) with min/max bounds when panel opens on desktop
   useEffect(() => {
@@ -154,52 +142,22 @@ function Chat() {
   }, [isPanelOpen])
 
   // On mobile entry/exit:
-  // - default to Project on narrow if chat was auto-collapsed and user hasn't explicitly chosen Chat
-  // - if user chose Chat on mobile, keep chat open when returning to wide
+  // - default to Project on narrow if chat was auto-collapsed
+  // - preserve header-driven selection via context otherwise
   useEffect(() => {
     if (isMobile) {
-      if (mobileUserChoiceRef.current === 'chat') {
-        setMobileView('chat')
-      } else if (autoCollapsedRef.current) {
+      if (autoCollapsedRef.current) {
         setMobileView('project')
       }
-    } else {
-      if (mobileView === 'chat') setIsPanelOpen(true)
-    }
+    } else if (mobileView === 'chat') setIsPanelOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile])
 
-  // Also reset to Project on route changes while on mobile (unless user explicitly selected Chat)
-  useEffect(() => {
-    if (isMobile && mobileUserChoiceRef.current !== 'chat') {
-      setMobileView('project')
-    }
-  }, [isMobile, mobileView, location.pathname])
+  // No route-based override; respect context-driven selection
 
-  // Listen to header toggles
-  useEffect(() => {
-    const onSet = (e: Event) => {
-      try {
-        const v = (e as CustomEvent<'chat' | 'project'>).detail
-        if (v === 'chat' || v === 'project') {
-          setMobileView(v)
-          if (isMobile) mobileUserChoiceRef.current = v
-        }
-      } catch {}
-    }
-    window.addEventListener('lf:set-mobile-view', onSet as EventListener)
-    return () =>
-      window.removeEventListener('lf:set-mobile-view', onSet as EventListener)
-  }, [isMobile])
+  // Header uses context to set view directly
 
-  // Emit current mobile view for header to reflect state
-  useEffect(() => {
-    try {
-      window.dispatchEvent(
-        new CustomEvent('lf:mobile-view-changed', { detail: mobileView }) as any
-      )
-    } catch {}
-  }, [mobileView])
+  // No need to emit events; header reads from context
 
   const effectivePanelOpen = isMobile ? true : isPanelOpen
 
@@ -249,7 +207,7 @@ function Chat() {
         {!isMobile && effectivePanelOpen ? (
           <div
             onMouseDown={startDrag}
-            className="hidden md:flex items-center justify-center absolute top-0 right-0 h-full w-3 sm:w-4 cursor-col-resize"
+            className="hidden md:flex items-center justify-center absolute right-0 bottom-0 top-10 w-3 sm:w-4 cursor-col-resize"
             role="separator"
             aria-label="Resize chat panel"
             title="Drag to resize chat"

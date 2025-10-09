@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import Message from './Message'
 import FontIcon from '../../common/FontIcon'
 import useChatboxWithProjectSession from '../../hooks/useChatboxWithProjectSession'
+import { useActiveProject } from '../../hooks/useActiveProject'
 
 interface ChatboxProps {
   isPanelOpen: boolean
@@ -34,6 +35,9 @@ function Chatbox({
     canSend,
     sessionId,
   } = useChatboxWithProjectSession()
+
+  const activeProject = useActiveProject()
+  const activeProjectName = activeProject?.project || ''
 
   // Refs for auto-scroll
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -171,9 +175,7 @@ function Chatbox({
         </div>
         {/* Centered project title on mobile */}
         <span className="md:hidden absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground truncate max-w-[60vw] pointer-events-none">
-          {typeof window !== 'undefined'
-            ? localStorage.getItem('activeProject') || ''
-            : ''}
+          {activeProjectName}
         </span>
         {/* Hide collapse toggle on mobile when chat is full-screen */}
         <div className="hidden md:block">
