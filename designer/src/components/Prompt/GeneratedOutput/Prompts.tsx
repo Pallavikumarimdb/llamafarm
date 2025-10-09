@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../ui/dialog'
+import { useToast } from '../../ui/toast'
 
 interface PromptRow {
   role?: string
@@ -25,6 +26,7 @@ const Prompts = () => {
     activeProject?.project || '',
     !!activeProject?.namespace && !!activeProject?.project
   )
+  const { toast } = useToast()
 
   const rows: PromptRow[] = useMemo(() => {
     const prompts = projectResponse?.project?.config?.prompts as
@@ -50,7 +52,7 @@ const Prompts = () => {
     role: 'system' | 'assistant' | 'user'
   ) => {
     if (!activeProject || !projectResponse?.project?.config) return
-    const config = projectResponse.project.config
+    const { config } = projectResponse.project
     const prompts = Array.isArray(config.prompts) ? [...config.prompts] : []
     if (
       mode === 'edit' &&
@@ -64,14 +66,20 @@ const Prompts = () => {
       prompts.unshift({ role, content: text })
     }
     const request = { config: { ...config, prompts } }
-    await projectService.updateProject(
-      activeProject.namespace,
-      activeProject.project,
-      request
-    )
-    await refetch()
-    setIsOpen(false)
-    setEditIndex(null)
+    try {
+      await projectService.updateProject(
+        activeProject.namespace,
+        activeProject.project,
+        request
+      )
+      await refetch()
+      setIsOpen(false)
+      setEditIndex(null)
+      toast({ message: 'Prompt saved', variant: 'default' })
+    } catch (e) {
+      console.error('Failed to save prompt', e)
+      toast({ message: 'Failed to save prompt', variant: 'destructive' })
+    }
   }
 
   const openCreatePrompt = () => {
@@ -91,19 +99,27 @@ const Prompts = () => {
     setIsOpen(true)
   }
 
-  const performDeletePrompt = async (index: number) => {
-    if (!activeProject || !projectResponse?.project?.config) return
-    const config = projectResponse.project.config
+  const performDeletePrompt = async (index: number): Promise<boolean> => {
+    if (!activeProject || !projectResponse?.project?.config) return false
+    const { config } = projectResponse.project
     const prompts = Array.isArray(config.prompts) ? [...config.prompts] : []
-    if (index < 0 || index >= prompts.length) return
+    if (index < 0 || index >= prompts.length) return false
     prompts.splice(index, 1)
     const request = { config: { ...config, prompts } }
-    await projectService.updateProject(
-      activeProject.namespace,
-      activeProject.project,
-      request
-    )
-    await refetch()
+    try {
+      await projectService.updateProject(
+        activeProject.namespace,
+        activeProject.project,
+        request
+      )
+      await refetch()
+      toast({ message: 'Prompt deleted', variant: 'default' })
+      return true
+    } catch (e) {
+      console.error('Failed to delete prompt', e)
+      toast({ message: 'Failed to delete prompt', variant: 'destructive' })
+      return false
+    }
   }
 
   const openDeletePrompt = (index: number) => {
@@ -113,9 +129,11 @@ const Prompts = () => {
 
   const confirmDeletePrompt = async () => {
     if (deleteIndex == null) return
-    await performDeletePrompt(deleteIndex)
-    setIsDeleteOpen(false)
-    setDeleteIndex(null)
+    const success = await performDeletePrompt(deleteIndex)
+    if (success) {
+      setIsDeleteOpen(false)
+      setDeleteIndex(null)
+    }
   }
 
   return (

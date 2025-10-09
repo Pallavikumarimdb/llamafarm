@@ -43,7 +43,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
       setText(initialText)
       setRole(initialRole)
     }
-  }, [isOpen, initialText, initialRole])
+  }, [isOpen, mode, initialText, initialRole])
 
   const title = mode === 'create' ? 'Create prompt' : 'Edit prompt'
   const cta = mode === 'create' ? 'Create' : 'Save'
@@ -140,7 +140,8 @@ const PromptModal: React.FC<PromptModalProps> = ({
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'opacity-50 cursor-not-allowed bg-primary text-primary-foreground'
               }`}
-              onClick={() => isValid && onSave(text.trim(), role)}
+              disabled={!isValid}
+              onClick={() => onSave(text.trim(), role)}
             >
               {cta}
             </button>
