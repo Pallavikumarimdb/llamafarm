@@ -6,7 +6,7 @@ from glob import glob
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.logging import FastAPIStructLogger
 from config.datamodel import LlamaFarmConfig
@@ -26,7 +26,7 @@ class ExampleSummary(BaseModel):
     title: str
     description: str | None = None
     primaryModel: str | None = None
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     dataset_count: int | None = None
     data_size_bytes: int | None = None
     data_size_human: str | None = None
@@ -43,7 +43,7 @@ class ExampleDataset(BaseModel):
     strategy: str | None = None
     database: str | None = None
     kind: str | None = None
-    ingest: list[str] = []
+    ingest: list[str] = Field(default_factory=list)
     size_bytes: int | None = None
     size_human: str | None = None
 
@@ -268,8 +268,8 @@ def _list_example_datasets_from_manifest(m: dict[str, Any]) -> list[ExampleDatas
             for path in glob(abs_glob):
                 try:
                     total += os.path.getsize(path)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.warning("Failed to get size for path", path=path, error=str(e))
 
         # Naive kind inference from file extensions in patterns
         kind: str | None = None
@@ -446,9 +446,14 @@ async def import_project(example_id: str, request: ImportProjectRequest) -> Impo
             continue
         try:
             DatasetService.create_dataset(request.namespace, request.name, ds_name, strategy, database)
-        except Exception:
-            # Dataset may already exist; proceed to add files
-            pass
+        except ValueError as e:
+            # Allow already-existing datasets; surface other errors
+            msg = str(e)
+            if "already exists" in msg:
+                logger.info("Dataset already exists; continuing", dataset=ds_name)
+            else:
+                logger.warning("Failed to create dataset during import_project", dataset=ds_name, error=msg)
+                raise HTTPException(status_code=400, detail=msg) from e
         datasets.append(ds_name)
 
         # Expand globs relative to repo root
@@ -508,8 +513,13 @@ async def import_data(example_id: str, request: ImportDataRequest) -> ImportData
         # Create if missing
         try:
             DatasetService.create_dataset(request.namespace, request.project, ds_name, strategy, database)
-        except Exception:
-            pass
+        except ValueError as e:
+            msg = str(e)
+            if "already exists" in msg:
+                logger.info("Dataset already exists; continuing", dataset=ds_name)
+            else:
+                logger.warning("Failed to create dataset during import_data", dataset=ds_name, error=msg)
+                raise HTTPException(status_code=400, detail=msg) from e
         datasets.append(ds_name)
 
         for pattern in ds.get("ingest", []) or []:
@@ -561,11 +571,10 @@ async def import_dataset(example_id: str, request: ImportDatasetRequest) -> Impo
         ProjectService.update_project(request.namespace, request.project, merged)
 
     # Find dataset in manifest
-    manifest_ds = None
-    for ds in m.get("datasets", []) or []:
-        if ds.get("name") == request.dataset:
-            manifest_ds = ds
-            break
+    manifest_ds = next(
+        (ds for ds in (m.get("datasets", []) or []) if ds.get("name") == request.dataset),
+        None,
+    )
     if not manifest_ds:
         raise HTTPException(status_code=404, detail=f"Dataset '{request.dataset}' not found in example '{example_id}'")
 
@@ -578,8 +587,13 @@ async def import_dataset(example_id: str, request: ImportDatasetRequest) -> Impo
     # Create if missing
     try:
         DatasetService.create_dataset(request.namespace, request.project, ds_name, strategy, database)
-    except Exception:
-        pass
+    except ValueError as e:
+        msg = str(e)
+        if "already exists" in msg:
+            logger.info("Dataset already exists; continuing", dataset=ds_name)
+        else:
+            logger.warning("Failed to create dataset during import_dataset", dataset=ds_name, error=msg)
+            raise HTTPException(status_code=400, detail=msg) from e
 
     # Add files
     file_count = 0

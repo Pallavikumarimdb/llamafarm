@@ -619,8 +619,18 @@ const Data = () => {
             })
             setIsImportOpen(false)
             navigate(`/chat/data/${name}`)
-          } catch (error) {
+          } catch (error: any) {
             console.error('Import failed', error)
+            try {
+              const serverMessage =
+                (error?.response?.data?.detail as string) ||
+                (error?.message as string) ||
+                'Unknown error'
+              toast({
+                message: `Failed to import dataset: ${serverMessage}`,
+                variant: 'destructive',
+              })
+            } catch {}
             // Local fallback to make import work without server: persist into demo datasets
             try {
               const raw = localStorage.getItem('lf_demo_datasets')
