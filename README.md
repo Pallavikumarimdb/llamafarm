@@ -1,4 +1,4 @@
-# 🦙 LlamaFarm
+# 🦙 LlamaFarm - Local AI and MLOps toolkit
 
 > Build powerful AI locally, extend anywhere.
 
