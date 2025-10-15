@@ -1397,7 +1397,13 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case uitk.CycleModelMsg:
-		if m.currentMode == ModeProject && len(m.availableModels) > 0 {
+		// Ensure PROJECT mode first
+		if m.currentMode != ModeProject {
+			m.switchMode(ModeProject)
+			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+			m.viewport.GotoBottom()
+		}
+		if len(m.availableModels) > 0 {
 			next := m.getNextModel()
 			old := m.currentModel
 			m.switchModel(next)
@@ -1405,7 +1411,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			cmds = append(cmds, func() tea.Msg { return uitk.ShowToastMsg{Message: fmt.Sprintf("Switched model: %s → %s", old, next)} })
 		} else {
-			cmds = append(cmds, func() tea.Msg { return uitk.ShowToastMsg{Message: "Model cycling requires PROJECT mode"} })
+			cmds = append(cmds, func() tea.Msg { return uitk.ShowToastMsg{Message: "No models available to cycle"} })
 		}
 
 	case uitk.ExecuteCommandMsg:
