@@ -21,17 +21,102 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
+import { useActiveProject } from '../../hooks/useActiveProject'
+import { useProject } from '../../hooks/useProjects'
 
-function Rag() {
+type Database = {
+  name: string
+  type?: string
+  config?: Record<string, any>
+}
+
+function Databases() {
   const navigate = useNavigate()
-  // const [query, setQuery] = useState('') // removed search for strategies
   const { toast } = useToast()
   const [mode, setMode] = useState<Mode>('designer')
+  const activeProject = useActiveProject()
+  const { data: projectResp } = useProject(
+    activeProject?.namespace || '',
+    activeProject?.project || '',
+    !!activeProject
+  )
 
   const [metaTick, setMetaTick] = useState(0)
   const [reembedOpen, setReembedOpen] = useState(false)
 
-  // Project-level configs (Embeddings / Retrievals) -------------------------
+  // Database management -------------------------------------------------
+  const databases = useMemo((): Database[] => {
+    // TEMPORARY: Hard-coded databases for UI testing
+    // TODO: Remove this once the backend properly returns both databases from llamafarm.yaml
+    return [
+      { name: 'main_database', type: 'ChromaStore', config: {} },
+      { name: 'secondary_database', type: 'ChromaStore', config: {} },
+    ]
+
+    /* Temporarily disabled - API not returning correct data
+    // Get databases from project config
+    if (projectResp?.project?.config?.rag?.databases) {
+      const dbs = projectResp.project.config.rag.databases
+      console.log('📊 API returned databases:', dbs)
+      if (Array.isArray(dbs) && dbs.length > 1) {
+        return dbs.map((db: any) => ({
+          name: db.name || 'unnamed',
+          type: db.type,
+          config: db.config,
+        }))
+      }
+      console.log('⚠️ API databases array has fewer than 2 databases')
+    }
+    
+    // Fallback to localStorage
+    try {
+      const stored = localStorage.getItem('lf_databases')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log('💾 Using localStorage databases:', parsed)
+          return parsed
+        }
+      }
+    } catch {}
+    
+    // Hard-code two databases for testing the UI
+    console.log('🔧 Using hard-coded fallback databases')
+    return [
+      { name: 'main_database', type: 'ChromaStore', config: {} },
+      { name: 'secondary_database', type: 'ChromaStore', config: {} },
+    ]
+    */
+  }, [projectResp])
+
+  // Active database state
+  const [activeDatabase, setActiveDatabase] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem('lf_active_database')
+      return stored || 'main_database'
+    } catch {
+      return 'main_database'
+    }
+  })
+
+  // Persist active database selection
+  useEffect(() => {
+    try {
+      localStorage.setItem('lf_active_database', activeDatabase)
+    } catch {}
+  }, [activeDatabase])
+
+  // Ensure active database exists in the list
+  useEffect(() => {
+    if (
+      databases.length > 0 &&
+      !databases.find(db => db.name === activeDatabase)
+    ) {
+      setActiveDatabase(databases[0].name)
+    }
+  }, [databases, activeDatabase])
+
+  // Database-level configs (Embeddings / Retrievals) -------------------------
   type EmbeddingItem = {
     id: string
     name: string
@@ -45,8 +130,9 @@ function Rag() {
     enabled: boolean
   }
 
-  const EMB_LIST_KEY = 'lf_project_embeddings'
-  const RET_LIST_KEY = 'lf_project_retrievals'
+  // Database-scoped storage keys
+  const EMB_LIST_KEY = `lf_db_${activeDatabase}_embeddings`
+  const RET_LIST_KEY = `lf_db_${activeDatabase}_retrievals`
 
   const getEmbeddings = (): EmbeddingItem[] => {
     const arr = getStoredArray(EMB_LIST_KEY)
@@ -106,7 +192,7 @@ function Rag() {
       // Ensure each embedding strategy has a default config for display
       const embeddings = getEmbeddings()
       embeddings.forEach(e => {
-        const key = `lf_strategy_embedding_config_${e.id}`
+        const key = `lf_db_${activeDatabase}_embedding_config_${e.id}`
         const raw = localStorage.getItem(key)
         if (!raw) {
           const payload = {
@@ -127,15 +213,15 @@ function Rag() {
       })
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [activeDatabase])
 
   const getEmbeddingSummary = (id: string): string => {
     try {
       const storedCfg = localStorage.getItem(
-        `lf_strategy_embedding_config_${id}`
+        `lf_db_${activeDatabase}_embedding_config_${id}`
       )
       const storedModel = localStorage.getItem(
-        `lf_strategy_embedding_model_${id}`
+        `lf_db_${activeDatabase}_embedding_model_${id}`
       )
       if (storedModel) return storedModel
       if (storedCfg) {
@@ -147,7 +233,9 @@ function Rag() {
   }
   const getEmbeddingProvider = (id: string): string | null => {
     try {
-      const raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      const raw = localStorage.getItem(
+        `lf_db_${activeDatabase}_embedding_config_${id}`
+      )
       if (!raw) return null
       const cfg = JSON.parse(raw)
       const p = cfg?.provider || cfg?.runtime || null
@@ -168,7 +256,9 @@ function Rag() {
   // kept for future use if needed; currently not used after card redesign
   const getEmbeddingDimension = (id: string): number | null => {
     try {
-      const raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      const raw = localStorage.getItem(
+        `lf_db_${activeDatabase}_embedding_config_${id}`
+      )
       if (!raw) return null
       const cfg = JSON.parse(raw)
       return typeof cfg?.dimension === 'number' ? cfg.dimension : null
@@ -178,7 +268,9 @@ function Rag() {
   }
   const getEmbeddingLocation = (id: string): string | null => {
     try {
-      let raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      let raw = localStorage.getItem(
+        `lf_db_${activeDatabase}_embedding_config_${id}`
+      )
       if (!raw) {
         raw = localStorage.getItem('lf_last_embedding_provider_config')
       }
@@ -217,7 +309,9 @@ function Rag() {
   }
   const getEmbeddingRuntime = (id: string): 'Local' | 'Cloud' | null => {
     try {
-      const raw = localStorage.getItem(`lf_strategy_embedding_config_${id}`)
+      const raw = localStorage.getItem(
+        `lf_db_${activeDatabase}_embedding_config_${id}`
+      )
       if (!raw) return null
       const cfg = JSON.parse(raw)
       if (cfg?.runtime === 'local') return 'Local'
@@ -254,7 +348,7 @@ function Rag() {
   //   list.push({ id, name, isDefault: list.length === 0, enabled: true })
   //   saveEmbeddings(list)
   //   setMetaTick(t => t + 1)
-  //   navigate(`/chat/rag/${id}/change-embedding`)
+  //   navigate(`/chat/databases/${id}/change-embedding`)
   // }
   // const createRetrieval = () => {
   //   const name = prompt('Enter retrieval strategy name')?.trim()
@@ -268,7 +362,7 @@ function Rag() {
   //   list.push({ id, name, isDefault: list.length === 0, enabled: true })
   //   saveRetrievals(list)
   //   setMetaTick(t => t + 1)
-  //   navigate(`/chat/rag/${id}/retrieval`)
+  //   navigate(`/chat/databases/${id}/retrieval`)
   // }
 
   const setDefaultEmbedding = (id: string) => {
@@ -310,7 +404,7 @@ function Rag() {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
       return a.name.localeCompare(b.name)
     })
-  }, [metaTick])
+  }, [metaTick, activeDatabase])
   const sortedRetrievals = useMemo(() => {
     const list = getRetrievals()
     return [...list].sort((a, b) => {
@@ -318,7 +412,7 @@ function Rag() {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
       return a.name.localeCompare(b.name)
     })
-  }, [metaTick])
+  }, [metaTick, activeDatabase])
   const embeddingCount = sortedEmbeddings.length
   const retrievalCount = sortedRetrievals.length
 
@@ -329,10 +423,32 @@ function Rag() {
       >
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-2xl">
-            {mode === 'designer' ? 'RAG' : 'Config editor'}
+            {mode === 'designer' ? 'Databases' : 'Config editor'}
           </h2>
           <PageActions mode={mode} onModeChange={setMode} />
         </div>
+        {mode === 'designer' && databases.length > 0 && (
+          <div className="mb-2 border-b border-border">
+            <div className="flex items-center gap-1">
+              {databases.map(db => (
+                <button
+                  key={db.name}
+                  onClick={() => setActiveDatabase(db.name)}
+                  className={`px-4 py-2 font-medium transition-colors relative ${
+                    activeDatabase === db.name
+                      ? 'text-primary'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {db.name}
+                  {activeDatabase === db.name && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {mode !== 'designer' ? (
           <div className="flex-1 min-h-0 overflow-hidden pb-6">
             <ConfigEditor className="h-full" />
@@ -340,7 +456,7 @@ function Rag() {
         ) : (
           <>
             {/* Embedding and Retrieval strategies - title outside card */}
-            <div className="text-sm font-medium mb-1 mt-6">
+            <div className="text-sm font-medium mb-1">
               Project Embedding and retrieval strategies
             </div>
             {/* Embeddings card */}
@@ -353,7 +469,7 @@ function Rag() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate('/chat/rag/add-embedding')}
+                  onClick={() => navigate('/chat/databases/add-embedding')}
                 >
                   Add new
                 </Button>
@@ -364,14 +480,14 @@ function Rag() {
                     key={ei.id}
                     className={`w-full bg-card rounded-lg border border-border flex flex-col gap-2 p-4 relative hover:bg-accent/20 hover:cursor-pointer transition-colors ${ei.enabled ? '' : 'opacity-70'} ${embeddingCount === 1 ? 'md:col-span-2' : ''}`}
                     onClick={() =>
-                      navigate(`/chat/rag/${ei.id}/change-embedding`)
+                      navigate(`/chat/databases/${ei.id}/change-embedding`)
                     }
                     role="button"
                     tabIndex={0}
                     onKeyDown={e => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        navigate(`/chat/rag/${ei.id}/change-embedding`)
+                        navigate(`/chat/databases/${ei.id}/change-embedding`)
                       }
                     }}
                   >
@@ -392,7 +508,9 @@ function Rag() {
                           <DropdownMenuItem
                             onClick={e => {
                               e.stopPropagation()
-                              navigate(`/chat/rag/${ei.id}/change-embedding`)
+                              navigate(
+                                `/chat/databases/${ei.id}/change-embedding`
+                              )
                             }}
                           >
                             Edit
@@ -417,10 +535,10 @@ function Rag() {
                               // hard delete config and list entry
                               try {
                                 localStorage.removeItem(
-                                  `lf_strategy_embedding_config_${ei.id}`
+                                  `lf_db_${activeDatabase}_embedding_config_${ei.id}`
                                 )
                                 localStorage.removeItem(
-                                  `lf_strategy_embedding_model_${ei.id}`
+                                  `lf_db_${activeDatabase}_embedding_model_${ei.id}`
                                 )
                               } catch {}
                               let list = getEmbeddings().filter(
@@ -505,7 +623,9 @@ function Rag() {
                           className="px-3 h-7"
                           onClick={e => {
                             e.stopPropagation()
-                            navigate(`/chat/rag/${ei.id}/change-embedding`)
+                            navigate(
+                              `/chat/databases/${ei.id}/change-embedding`
+                            )
                           }}
                         >
                           Configure
@@ -526,7 +646,7 @@ function Rag() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate('/chat/rag/add-retrieval')}
+                  onClick={() => navigate('/chat/databases/add-retrieval')}
                 >
                   Add new
                 </Button>
@@ -536,13 +656,15 @@ function Rag() {
                   <div
                     key={ri.id}
                     className={`w-full bg-card rounded-lg border border-border flex flex-col gap-2 p-4 relative hover:bg-accent/20 hover:cursor-pointer transition-colors ${ri.enabled ? '' : 'opacity-70'} ${retrievalCount === 1 ? 'md:col-span-2' : ''}`}
-                    onClick={() => navigate(`/chat/rag/${ri.id}/retrieval`)}
+                    onClick={() =>
+                      navigate(`/chat/databases/${ri.id}/retrieval`)
+                    }
                     role="button"
                     tabIndex={0}
                     onKeyDown={e => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        navigate(`/chat/rag/${ri.id}/retrieval`)
+                        navigate(`/chat/databases/${ri.id}/retrieval`)
                       }
                     }}
                   >
@@ -654,7 +776,7 @@ function Rag() {
                           className="px-3 h-7"
                           onClick={e => {
                             e.stopPropagation()
-                            navigate(`/chat/rag/${ri.id}/retrieval`)
+                            navigate(`/chat/databases/${ri.id}/retrieval`)
                           }}
                         >
                           Configure
@@ -715,4 +837,4 @@ function Rag() {
   )
 }
 
-export default Rag
+export default Databases
