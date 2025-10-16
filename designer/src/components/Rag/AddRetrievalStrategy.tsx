@@ -8,37 +8,12 @@ import {
   getDefaultConfigForRetrieval,
   parseWeightsList,
 } from '../../utils/retrievalUtils'
-
-// Strategy options (keep in sync with RetrievalMethod)
-const STRATEGY_TYPES = [
-  'BasicSimilarityStrategy',
-  'MetadataFilteredStrategy',
-  'MultiQueryStrategy',
-  'RerankedStrategy',
-  'HybridUniversalStrategy',
-] as const
-type StrategyType = (typeof STRATEGY_TYPES)[number]
-
-const STRATEGY_LABELS: Record<StrategyType, string> = {
-  BasicSimilarityStrategy: 'Basic similarity',
-  MetadataFilteredStrategy: 'Metadata-filtered',
-  MultiQueryStrategy: 'Multi-query',
-  RerankedStrategy: 'Reranked',
-  HybridUniversalStrategy: 'Hybrid universal',
-}
-
-const STRATEGY_DESCRIPTIONS: Record<StrategyType, string> = {
-  BasicSimilarityStrategy:
-    'Simple, fast vector search. Returns the top matches by similarity (you set how many and the distance metric). Optionally filter out weak hits with a score threshold.',
-  MetadataFilteredStrategy:
-    'Search with filters like source, type, date, or tags. Choose whether filters apply before or after retrieval, and automatically widen results when post-filtering removes too much.',
-  MultiQueryStrategy:
-    'Ask the question several ways at once. We create multiple query variations and merge their results so you catch relevant content even when phrased differently.',
-  RerankedStrategy:
-    'Pull a larger candidate set first, then sort by quality. Tune weights for similarity, recency, length, and metadata; optionally normalize scores for fair comparisons.',
-  HybridUniversalStrategy:
-    'Blend multiple strategies into one result set. Combine with weighted average, rank fusion, or score fusion, then keep the best K.',
-}
+import {
+  STRATEGY_TYPES,
+  STRATEGY_LABELS,
+  STRATEGY_DESCRIPTIONS,
+  type StrategyType,
+} from '../../utils/strategyCatalog'
 
 function AddRetrievalStrategy() {
   const navigate = useNavigate()

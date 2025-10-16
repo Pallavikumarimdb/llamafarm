@@ -30,6 +30,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../ui/tooltip'
+import { apiClient } from '../../api/client'
 
 type Database = {
   name: string
@@ -59,47 +60,28 @@ function Databases() {
 
   // Database management -------------------------------------------------
   const databases = useMemo((): Database[] => {
-    // TEMPORARY: Hard-coded databases for UI testing
-    // TODO: Remove this once the backend properly returns both databases from llamafarm.yaml
-    return [
-      { name: 'main_database', type: 'ChromaStore', config: {} },
-      { name: 'secondary_database', type: 'ChromaStore', config: {} },
-    ]
-
-    /* Temporarily disabled - API not returning correct data
-    // Get databases from project config
-    if (projectResp?.project?.config?.rag?.databases) {
-      const dbs = projectResp.project.config.rag.databases
-      console.log('📊 API returned databases:', dbs)
-      if (Array.isArray(dbs) && dbs.length > 1) {
-        return dbs.map((db: any) => ({
-          name: db.name || 'unnamed',
-          type: db.type,
-          config: db.config,
-        }))
-      }
-      console.log('⚠️ API databases array has fewer than 2 databases')
+    // Prefer databases from live project config
+    const cfgDbs = (projectResp as any)?.project?.config?.rag?.databases
+    if (Array.isArray(cfgDbs) && cfgDbs.length > 0) {
+      return cfgDbs.map((db: any) => ({
+        name: db?.name || 'unnamed',
+        type: db?.type,
+        config: db?.config,
+      }))
     }
-    
-    // Fallback to localStorage
+
+    // Fallbacks (legacy/local dev)
     try {
       const stored = localStorage.getItem('lf_databases')
       if (stored) {
         const parsed = JSON.parse(stored)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log('💾 Using localStorage databases:', parsed)
           return parsed
         }
       }
     } catch {}
-    
-    // Hard-code two databases for testing the UI
-    console.log('🔧 Using hard-coded fallback databases')
-    return [
-      { name: 'main_database', type: 'ChromaStore', config: {} },
-      { name: 'secondary_database', type: 'ChromaStore', config: {} },
-    ]
-    */
+
+    return []
   }, [projectResp])
 
   // Active database state
@@ -187,8 +169,91 @@ function Databases() {
   const saveRetrievals = (list: RetrievalItem[]) =>
     setStoredArray(RET_LIST_KEY, list)
 
+  // Live RAG databases (for retrieval strategies defaults) -------------------
+  type RagDatabasesResponse = {
+    databases: {
+      name: string
+      type?: string
+      is_default?: boolean
+      retrieval_strategies?: {
+        name: string
+        type?: string
+        is_default?: boolean
+      }[]
+    }[]
+    default_database?: string | null
+  }
+  const [ragDatabases, setRagDatabases] = useState<RagDatabasesResponse | null>(
+    null
+  )
+  useEffect(() => {
+    const ns = activeProject?.namespace
+    const proj = activeProject?.project
+    if (!ns || !proj) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const resp = await apiClient.get<RagDatabasesResponse>(
+          `/projects/${encodeURIComponent(ns)}/${encodeURIComponent(
+            proj
+          )}/rag/databases`
+        )
+        if (!cancelled) setRagDatabases(resp.data)
+      } catch {
+        if (!cancelled) setRagDatabases(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.namespace, activeProject?.project])
+
+  // Current config database (for embedding strategies)
+  const currentConfigDb = useMemo(() => {
+    const cfgDbs = (projectResp as any)?.project?.config?.rag?.databases
+    if (!Array.isArray(cfgDbs)) return null
+    return cfgDbs.find((d: any) => d?.name === activeDatabase) || null
+  }, [projectResp, activeDatabase])
+
+  // Embeddings from config (fallback to local only if config missing)
+  const configEmbeddings: EmbeddingItem[] | null = useMemo(() => {
+    if (!currentConfigDb) return null
+    const list = Array.isArray(currentConfigDb.embedding_strategies)
+      ? (currentConfigDb.embedding_strategies as any[])
+      : []
+    const def = currentConfigDb.default_embedding_strategy
+    return list.map((e: any) => ({
+      id: String(e?.name ?? 'embedding'),
+      name: String(e?.name ?? 'embedding'),
+      isDefault: def ? String(def) === String(e?.name) : false,
+      enabled: true,
+    }))
+  }, [currentConfigDb])
+
+  // Retrievals from server (fallback to local only if missing)
+  const serverRetrievals: RetrievalItem[] | null = useMemo(() => {
+    if (!ragDatabases) return null
+    const db = ragDatabases.databases?.find(d => d.name === activeDatabase)
+    const list = db?.retrieval_strategies || []
+    return list.map(s => ({
+      id: s.name,
+      name: s.name,
+      isDefault: Boolean(s.is_default),
+      enabled: true,
+    }))
+  }, [ragDatabases, activeDatabase])
+
+  const usingConfigEmbeddings = Boolean(
+    configEmbeddings && configEmbeddings.length > 0
+  )
+  const usingServerRetrievals = Boolean(
+    serverRetrievals && serverRetrievals.length > 0
+  )
+
   // Seed defaults once
   useEffect(() => {
+    // Skip local seeding when live config/server data are present
+    if (usingConfigEmbeddings || usingServerRetrievals) return
     try {
       if (getEmbeddings().length === 0) {
         saveEmbeddings([
@@ -234,7 +299,7 @@ function Databases() {
       })
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDatabase])
+  }, [activeDatabase, usingConfigEmbeddings, usingServerRetrievals])
 
   const getEmbeddingSummary = (id: string): string => {
     try {
@@ -419,21 +484,21 @@ function Databases() {
   }
 
   const sortedEmbeddings = useMemo(() => {
-    const list = getEmbeddings()
+    const list = configEmbeddings ?? getEmbeddings()
     return [...list].sort((a, b) => {
       if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
       return a.name.localeCompare(b.name)
     })
-  }, [metaTick, activeDatabase])
+  }, [metaTick, activeDatabase, configEmbeddings])
   const sortedRetrievals = useMemo(() => {
-    const list = getRetrievals()
+    const list = serverRetrievals ?? getRetrievals()
     return [...list].sort((a, b) => {
       if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
       return a.name.localeCompare(b.name)
     })
-  }, [metaTick, activeDatabase])
+  }, [metaTick, activeDatabase, serverRetrievals])
   const embeddingCount = sortedEmbeddings.length
   const retrievalCount = sortedRetrievals.length
 
@@ -513,17 +578,19 @@ function Databases() {
                 <div className="text-sm text-foreground font-medium">
                   Embedding strategies ({embeddingCount})
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigate(
-                      `/chat/databases/add-embedding?database=${activeDatabase}`
-                    )
-                  }
-                >
-                  Add new
-                </Button>
+                {!usingConfigEmbeddings && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate(
+                        `/chat/databases/add-embedding?database=${activeDatabase}`
+                      )
+                    }
+                  >
+                    Add new
+                  </Button>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sortedEmbeddings.map(ei => (
@@ -542,74 +609,76 @@ function Databases() {
                       }
                     }}
                   >
-                    <div className="absolute top-2 right-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
-                            onClick={e => e.stopPropagation()}
+                    {!usingConfigEmbeddings && (
+                      <div className="absolute top-2 right-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <FontIcon type="overflow" className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="min-w-[12rem] w-[12rem]"
                           >
-                            <FontIcon type="overflow" className="w-4 h-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className="min-w-[12rem] w-[12rem]"
-                        >
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              navigate(
-                                `/chat/databases/${ei.id}/change-embedding`
-                              )
-                            }}
-                          >
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              setDefaultEmbedding(ei.id)
-                              setReembedOpen(true)
-                            }}
-                          >
-                            Make default
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={e => {
-                              e.stopPropagation()
-                              const ok = confirm(
-                                'Remove this embedding strategy?'
-                              )
-                              if (!ok) return
-                              // hard delete config and list entry
-                              try {
-                                localStorage.removeItem(
-                                  `lf_db_${activeDatabase}_embedding_config_${ei.id}`
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                navigate(
+                                  `/chat/databases/${ei.id}/change-embedding`
                                 )
-                                localStorage.removeItem(
-                                  `lf_db_${activeDatabase}_embedding_model_${ei.id}`
+                              }}
+                            >
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                setDefaultEmbedding(ei.id)
+                                setReembedOpen(true)
+                              }}
+                            >
+                              Make default
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={e => {
+                                e.stopPropagation()
+                                const ok = confirm(
+                                  'Remove this embedding strategy?'
                                 )
-                              } catch {}
-                              let list = getEmbeddings().filter(
-                                x => x.id !== ei.id
-                              )
-                              if (
-                                list.length > 0 &&
-                                !list.some(x => x.isDefault)
-                              ) {
-                                list[0].isDefault = true
-                              }
-                              saveEmbeddings(list)
-                              setMetaTick(t => t + 1)
-                            }}
-                          >
-                            Remove
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                                if (!ok) return
+                                // hard delete config and list entry
+                                try {
+                                  localStorage.removeItem(
+                                    `lf_db_${activeDatabase}_embedding_config_${ei.id}`
+                                  )
+                                  localStorage.removeItem(
+                                    `lf_db_${activeDatabase}_embedding_model_${ei.id}`
+                                  )
+                                } catch {}
+                                let list = getEmbeddings().filter(
+                                  x => x.id !== ei.id
+                                )
+                                if (
+                                  list.length > 0 &&
+                                  !list.some(x => x.isDefault)
+                                ) {
+                                  list[0].isDefault = true
+                                }
+                                saveEmbeddings(list)
+                                setMetaTick(t => t + 1)
+                              }}
+                            >
+                              Remove
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
 
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -694,17 +763,19 @@ function Databases() {
                 <div className="text-sm text-foreground font-medium">
                   Retrieval strategies ({retrievalCount})
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigate(
-                      `/chat/databases/add-retrieval?database=${activeDatabase}`
-                    )
-                  }
-                >
-                  Add new
-                </Button>
+                {!usingServerRetrievals && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate(
+                        `/chat/databases/add-retrieval?database=${activeDatabase}`
+                      )
+                    }
+                  >
+                    Add new
+                  </Button>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sortedRetrievals.map(ri => (
@@ -723,87 +794,89 @@ function Databases() {
                       }
                     }}
                   >
-                    <div className="absolute top-2 right-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
-                            onClick={e => e.stopPropagation()}
+                    {!usingServerRetrievals && (
+                      <div className="absolute top-2 right-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="w-6 h-6 grid place-items-center rounded-md text-muted-foreground hover:bg-accent/30"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <FontIcon type="overflow" className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="min-w-[12rem] w-[12rem]"
                           >
-                            <FontIcon type="overflow" className="w-4 h-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className="min-w-[12rem] w-[12rem]"
-                        >
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              const name = prompt(
-                                'Rename retrieval strategy',
-                                ri.name
-                              )?.trim()
-                              if (!name) return
-                              const list = getRetrievals().map(x =>
-                                x.id === ri.id ? { ...x, name } : x
-                              )
-                              saveRetrievals(list)
-                              setMetaTick(t => t + 1)
-                            }}
-                          >
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              duplicateRetrieval(ri.id)
-                            }}
-                          >
-                            Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              setDefaultRetrieval(ri.id)
-                            }}
-                          >
-                            Set as default
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              toggleRetrievalEnabled(ri.id)
-                            }}
-                          >
-                            {ri.enabled ? 'Disable' : 'Enable'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={e => {
-                              e.stopPropagation()
-                              const ok = confirm(
-                                'Delete this retrieval strategy?'
-                              )
-                              if (!ok) return
-                              let list = getRetrievals().filter(
-                                x => x.id !== ri.id
-                              )
-                              if (
-                                list.length > 0 &&
-                                !list.some(x => x.isDefault)
-                              ) {
-                                list[0].isDefault = true
-                              }
-                              saveRetrievals(list)
-                              setMetaTick(t => t + 1)
-                            }}
-                          >
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                const name = prompt(
+                                  'Rename retrieval strategy',
+                                  ri.name
+                                )?.trim()
+                                if (!name) return
+                                const list = getRetrievals().map(x =>
+                                  x.id === ri.id ? { ...x, name } : x
+                                )
+                                saveRetrievals(list)
+                                setMetaTick(t => t + 1)
+                              }}
+                            >
+                              Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                duplicateRetrieval(ri.id)
+                              }}
+                            >
+                              Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                setDefaultRetrieval(ri.id)
+                              }}
+                            >
+                              Set as default
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={e => {
+                                e.stopPropagation()
+                                toggleRetrievalEnabled(ri.id)
+                              }}
+                            >
+                              {ri.enabled ? 'Disable' : 'Enable'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={e => {
+                                e.stopPropagation()
+                                const ok = confirm(
+                                  'Delete this retrieval strategy?'
+                                )
+                                if (!ok) return
+                                let list = getRetrievals().filter(
+                                  x => x.id !== ri.id
+                                )
+                                if (
+                                  list.length > 0 &&
+                                  !list.some(x => x.isDefault)
+                                ) {
+                                  list[0].isDefault = true
+                                }
+                                saveRetrievals(list)
+                                setMetaTick(t => t + 1)
+                              }}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
 
                     <div className="text-sm font-medium">{ri.name}</div>
                     <div className="text-xs text-primary text-left w-full truncate">
