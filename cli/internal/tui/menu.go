@@ -53,7 +53,6 @@ type QuickMenuModel struct {
 
 	baseStyle      lipgloss.Style
 	focusedStyle   lipgloss.Style
-	dimmedStyle    lipgloss.Style
 	headerStyle    lipgloss.Style
 	hintStyle      lipgloss.Style
 	borderStyle    lipgloss.Style
@@ -144,7 +143,6 @@ func NewQuickMenuModel(config *Config) QuickMenuModel {
 
 	m.baseStyle = lipgloss.NewStyle()
 	m.focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
-	m.dimmedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	m.headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
 	m.hintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	m.borderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("86")).Padding(1, 2)
@@ -195,88 +193,25 @@ func NewQuickMenuModel(config *Config) QuickMenuModel {
 }
 
 func (m QuickMenuModel) Update(msg tea.Msg) (QuickMenuModel, tea.Cmd) {
+	// Always keep size in sync
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	}
+
+	// Apply external state messages uniformly (active or not)
+	if cmd := m.applyStateMessage(msg); cmd != nil {
+		return m, cmd
+	}
+
 	if !m.active {
-		switch msg := msg.(type) {
-		case tea.WindowSizeMsg:
-			m.width = msg.Width
-			m.height = msg.Height
-		case SwitchModeMsg:
-			m.devMode = msg.DevMode
-		case SwitchDatabaseMsg:
-			m.currentDB = msg.DatabaseName
-			for i := range m.databases {
-				m.databases[i].IsActive = (m.databases[i].Name == msg.DatabaseName)
-			}
-			// Update strategies to show only those for the selected database
-			m.updateStrategiesForCurrentDatabase()
-			// Reset strategy selection to the default for the new database
-			if len(m.strategies) > 0 {
-				m.currentStrategy = m.strategies[0].Name
-				m.strategies[0].IsActive = true
-			}
-		case SwitchModelMsg:
-			m.currentModel = msg.ModelName
-			for i := range m.models {
-				m.models[i].IsActive = (m.models[i].Name == msg.ModelName)
-			}
-		case SwitchProjectMsg:
-			m.currentProject = msg.ProjectName
-			m.currentNamespace = msg.Namespace
-			for i := range m.projects {
-				m.projects[i].IsActive = (m.projects[i].Name == msg.ProjectName && m.projects[i].Namespace == msg.Namespace)
-			}
-		case SwitchStrategyMsg:
-			m.currentStrategy = msg.StrategyName
-			for i := range m.strategies {
-				m.strategies[i].IsActive = (m.strategies[i].Name == msg.StrategyName)
-			}
-		}
 		return m, nil
 	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		return m, nil
-	case SwitchModeMsg:
-		m.devMode = msg.DevMode
-		return m, nil
-	case SwitchDatabaseMsg:
-		m.currentDB = msg.DatabaseName
-		for i := range m.databases {
-			m.databases[i].IsActive = (m.databases[i].Name == msg.DatabaseName)
-		}
-		// Update strategies to show only those for the selected database
-		m.updateStrategiesForCurrentDatabase()
-		// Reset strategy selection to the default for the new database
-		if len(m.strategies) > 0 {
-			m.currentStrategy = m.strategies[0].Name
-			m.strategies[0].IsActive = true
-		}
-		m.clampCursor()
-		return m, nil
-	case SwitchModelMsg:
-		m.currentModel = msg.ModelName
-		for i := range m.models {
-			m.models[i].IsActive = (m.models[i].Name == msg.ModelName)
-		}
-		m.clampCursor()
-		return m, nil
-	case SwitchProjectMsg:
-		m.currentProject = msg.ProjectName
-		m.currentNamespace = msg.Namespace
-		for i := range m.projects {
-			m.projects[i].IsActive = (m.projects[i].Name == msg.ProjectName && m.projects[i].Namespace == msg.Namespace)
-		}
-		m.clampCursor()
-		return m, nil
-	case SwitchStrategyMsg:
-		m.currentStrategy = msg.StrategyName
-		for i := range m.strategies {
-			m.strategies[i].IsActive = (m.strategies[i].Name == msg.StrategyName)
-		}
-		m.clampCursor()
+		// already applied above; nothing else to do when active
 		return m, nil
 	case tea.KeyMsg:
 		if m.menuState == ProjectSelectState {
@@ -331,6 +266,51 @@ func (m QuickMenuModel) Update(msg tea.Msg) (QuickMenuModel, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// applyStateMessage normalizes handling of external Update messages that mutate
+// the menu's state, avoiding duplicated logic between active/inactive states.
+func (m *QuickMenuModel) applyStateMessage(msg tea.Msg) tea.Cmd {
+	switch v := msg.(type) {
+	case SwitchModeMsg:
+		m.devMode = v.DevMode
+		return nil
+	case SwitchDatabaseMsg:
+		m.currentDB = v.DatabaseName
+		for i := range m.databases {
+			m.databases[i].IsActive = (m.databases[i].Name == v.DatabaseName)
+		}
+		m.updateStrategiesForCurrentDatabase()
+		if len(m.strategies) > 0 {
+			m.currentStrategy = m.strategies[0].Name
+			m.strategies[0].IsActive = true
+		}
+		m.clampCursor()
+		return nil
+	case SwitchModelMsg:
+		m.currentModel = v.ModelName
+		for i := range m.models {
+			m.models[i].IsActive = (m.models[i].Name == v.ModelName)
+		}
+		m.clampCursor()
+		return nil
+	case SwitchProjectMsg:
+		m.currentProject = v.ProjectName
+		m.currentNamespace = v.Namespace
+		for i := range m.projects {
+			m.projects[i].IsActive = (m.projects[i].Name == v.ProjectName && m.projects[i].Namespace == v.Namespace)
+		}
+		m.clampCursor()
+		return nil
+	case SwitchStrategyMsg:
+		m.currentStrategy = v.StrategyName
+		for i := range m.strategies {
+			m.strategies[i].IsActive = (m.strategies[i].Name == v.StrategyName)
+		}
+		m.clampCursor()
+		return nil
+	}
+	return nil
 }
 
 func (m QuickMenuModel) handleProjectSelection(msg tea.KeyMsg) (QuickMenuModel, tea.Cmd) {
@@ -607,25 +587,13 @@ func (m QuickMenuModel) View() string {
 	}
 	menuWidth := m.computeMenuWidth()
 	var content strings.Builder
-	header := m.headerStyle.Render("🦙 LlamaFarm Quick Menu")
-	// Subtle version next to title
-	leftHeader := header
-	if strings.TrimSpace(m.version) != "" {
-		versionText := m.hintStyle.Render(fmt.Sprintf("version: %s", m.version))
-		leftHeader = lipgloss.JoinHorizontal(lipgloss.Left, header, " ", versionText)
-	}
-	closeHint := m.hintStyle.Render("[ESC to close]")
-	spaceCount := menuWidth - lipgloss.Width(leftHeader) - lipgloss.Width(closeHint) - 4
-	if spaceCount < 0 {
-		spaceCount = 0
-	}
-	headerLine := lipgloss.JoinHorizontal(lipgloss.Left, leftHeader, strings.Repeat(" ", spaceCount), closeHint)
-	content.WriteString(headerLine + "\n")
+	content.WriteString(m.renderHeaderLine(menuWidth) + "\n")
 	ruleWidth := menuWidth - 4
 	if ruleWidth < 0 {
 		ruleWidth = 0
 	}
-	content.WriteString(strings.Repeat("─", ruleWidth) + "\n\n")
+	content.WriteString(m.renderRule(ruleWidth) + "\n")
+	content.WriteString("\n")
 	content.WriteString(m.renderTabBar() + "\n\n")
 	switch m.activeTab {
 	case ContextTab:
@@ -635,7 +603,7 @@ func (m QuickMenuModel) View() string {
 	case HelpTab:
 		content.WriteString(m.renderHelpTab())
 	}
-	content.WriteString("\n" + strings.Repeat("─", ruleWidth) + "\n")
+	content.WriteString("\n" + m.renderRule(ruleWidth) + "\n")
 	// Footer boxed styling with fixed inner width to avoid wrap glitches
 	innerWidth := menuWidth - 6 // account for outer padding/borders
 	if innerWidth < 10 {
@@ -696,6 +664,52 @@ func (m QuickMenuModel) renderTabBar() string {
 	}
 	// Left-align to avoid wrapping when the active pill is wider
 	return strings.Join(pieces, " ")
+}
+
+func (m QuickMenuModel) renderRule(width int) string {
+	if width < 0 {
+		width = 0
+	}
+	return strings.Repeat("─", width)
+}
+
+// renderHeaderLine builds the top header with title, version, and close hint.
+func (m QuickMenuModel) renderHeaderLine(menuWidth int) string {
+	header := m.headerStyle.Render("🦙 LlamaFarm Quick Menu")
+	leftHeader := header
+	if strings.TrimSpace(m.version) != "" {
+		versionText := m.hintStyle.Render(fmt.Sprintf("version: %s", m.version))
+		leftHeader = lipgloss.JoinHorizontal(lipgloss.Left, header, " ", versionText)
+	}
+	closeHint := m.hintStyle.Render("[ESC to close]")
+	spaceCount := menuWidth - lipgloss.Width(leftHeader) - lipgloss.Width(closeHint) - 4
+	if spaceCount < 0 {
+		spaceCount = 0
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, leftHeader, strings.Repeat(" ", spaceCount), closeHint)
+}
+
+// toggleIndicatorForRow returns the [▶]/[▼] indicator for expandable rows.
+func (m QuickMenuModel) toggleIndicatorForRow(i int) string {
+	switch i {
+	case 0:
+		if m.showModelsList {
+			return "[▼] "
+		}
+		return "[▶] "
+	case 1:
+		if m.showDatasetsList {
+			return "[▼] "
+		}
+		return "[▶] "
+	case 2:
+		if m.showPromptsList {
+			return "[▼] "
+		}
+		return "[▶] "
+	default:
+		return ""
+	}
 }
 
 func (m QuickMenuModel) renderContextTab() string {
@@ -901,17 +915,7 @@ func (m QuickMenuModel) renderCommandsTab() string {
 		contentWidth = 24
 	}
 	// Dynamic column widths
-	commandCol := contentWidth / 3
-	if commandCol < 16 {
-		commandCol = 16
-	}
-	if commandCol > 28 {
-		commandCol = 28
-	}
-	descWidth := contentWidth - commandCol - 3 // cursor + space
-	if descWidth < 10 {
-		descWidth = 10
-	}
+	commandCol, descWidth := m.computeCommandColumns(contentWidth)
 	for i, cmd := range m.commands {
 		cursor := "  "
 		// Compute actual row index considering expansion for rows below the first item
@@ -937,26 +941,7 @@ func (m QuickMenuModel) renderCommandsTab() string {
 		descLines := wrapText(cmd.Description, descWidth)
 		// First line with columns
 		// Add toggle indicator to the first command (list models)
-		indicator := ""
-		if i == 0 {
-			if m.showModelsList {
-				indicator = "[▼] "
-			} else {
-				indicator = "[▶] "
-			}
-		} else if i == 1 { // list datasets indicator
-			if m.showDatasetsList {
-				indicator = "[▼] "
-			} else {
-				indicator = "[▶] "
-			}
-		} else if i == 2 { // list prompts indicator
-			if m.showPromptsList {
-				indicator = "[▼] "
-			} else {
-				indicator = "[▶] "
-			}
-		}
+		indicator := m.toggleIndicatorForRow(i)
 		s.WriteString(fmt.Sprintf("%s%-*s %s%s\n", cursor, commandCol, indicator+cmdText, "", descLines[0]))
 		// Continuation lines aligned under description
 		indent := strings.Repeat(" ", 2+commandCol+1) // cursor + command col + space
@@ -1092,41 +1077,23 @@ func (m QuickMenuModel) renderCommandsTab() string {
 	return s.String()
 }
 
-func (m QuickMenuModel) renderConfigTab() string {
-	var s strings.Builder
-	s.WriteString("Inference Model:\n")
-	for i, model := range m.models {
-		cursor := "  "
-		if i == m.cursorPos {
-			cursor = "→ "
-		}
-		active := " "
-		if model.IsActive {
-			active = "✓"
-		}
-		line := fmt.Sprintf("%s%s %s (%s)", cursor, active, model.Name, model.Provider)
-		if i == m.cursorPos {
-			line = m.focusedStyle.Render(line)
-		}
-		s.WriteString(line + "\n")
+// computeCommandColumns returns column widths for command and description based on available width.
+func (m QuickMenuModel) computeCommandColumns(contentWidth int) (int, int) {
+	commandCol := contentWidth / 3
+	if commandCol < 16 {
+		commandCol = 16
 	}
-	s.WriteString("\n")
-	s.WriteString("Embedding Model:\n")
-	// Show embedding model as selected styling to match inference model section
-	itemIndex := len(m.models) // embedding row index
-	embCursor := "  "
-	if m.cursorPos == itemIndex { // allow focus on this informational row
-		embCursor = "→ "
+	if commandCol > 28 {
+		commandCol = 28
 	}
-	embLine := fmt.Sprintf("%s✓ nomic-embed-text", embCursor)
-	if m.cursorPos == itemIndex {
-		embLine = m.focusedStyle.Render(embLine)
-	} else {
-		embLine = lipgloss.NewStyle().Foreground(m.activeColor).Bold(true).Render(embLine)
+	descWidth := contentWidth - commandCol - 3 // cursor + space
+	if descWidth < 10 {
+		descWidth = 10
 	}
-	s.WriteString(embLine + "\n")
-	return s.String()
+	return commandCol, descWidth
 }
+
+// renderConfigTab was replaced by renderCommandsTab; keeping it removed reduces duplication.
 
 func (m QuickMenuModel) renderFooter() string {
 	var shortcuts []string
@@ -1267,28 +1234,28 @@ func (m QuickMenuModel) positionMenu(content string) string {
 }
 
 func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
 	if len(text) <= width {
 		return []string{text}
 	}
 	var lines []string
 	words := strings.Fields(text)
-	currentLine := ""
-	for _, word := range words {
-		if len(currentLine)+len(word)+1 <= width {
-			if currentLine == "" {
-				currentLine = word
-			} else {
-				currentLine += " " + word
-			}
-		} else {
-			if currentLine != "" {
-				lines = append(lines, currentLine)
-			}
-			currentLine = word
+	var b strings.Builder
+	for i, word := range words {
+		// if adding the next word would exceed width, flush
+		if b.Len() > 0 && b.Len()+1+len(word) > width {
+			lines = append(lines, b.String())
+			b.Reset()
 		}
-	}
-	if currentLine != "" {
-		lines = append(lines, currentLine)
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(word)
+		if i == len(words)-1 && b.Len() > 0 {
+			lines = append(lines, b.String())
+		}
 	}
 	return lines
 }
@@ -1406,12 +1373,7 @@ func (m *QuickMenuModel) Open() {
 func (m *QuickMenuModel) Close()        { m.active = false; m.menuState = NormalState }
 func (m QuickMenuModel) IsActive() bool { return m.active }
 
-// UpdateMenuDataMsg is sent when menu data needs to be refreshed from configuration
-type UpdateMenuDataMsg struct {
-	Models     []ModelItem
-	Databases  []DatabaseItem
-	Strategies []StrategyItem
-}
+// (removed) UpdateMenuDataMsg was unused; SetData is called directly by parent
 
 // SetData updates the menu with real configuration data
 func (m *QuickMenuModel) SetData(models []ModelItem, databases []DatabaseItem, databaseStrategies map[string][]StrategyItem, currentModel, currentDB, currentStrategy string) {

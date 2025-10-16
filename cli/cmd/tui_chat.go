@@ -895,8 +895,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				newMode = ModeDev
 			}
 			m.switchMode(newMode)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 			return m, nil
 
 		case "ctrl+k":
@@ -904,8 +903,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentMode == ModeProject && len(m.availableModels) > 0 {
 				nextModel := m.getNextModel()
 				m.switchModel(nextModel)
-				m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-				m.viewport.GotoBottom()
+				m.refreshViewportBottom()
 			}
 			return m, nil
 
@@ -994,8 +992,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.switchMode(newMode)
 					m.textarea.SetValue("")
-					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-					m.viewport.GotoBottom()
+					m.refreshViewportBottom()
 				case "/model":
 					if m.currentMode != ModeProject {
 						m.messages = append(m.messages, Message{
@@ -1035,8 +1032,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					m.switchModel(modelName)
 					m.textarea.SetValue("")
-					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-					m.viewport.GotoBottom()
+					m.refreshViewportBottom()
 				case "/launch":
 					if len(fields) < 2 {
 						m.messages = append(m.messages, Message{Role: "client", Content: "Usage: /launch <component>. Components: designer"})
@@ -1054,8 +1050,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.textarea.SetValue("")
 						break
 					}
-					cmds = append(cmds, openURL(m.designerURL))
 					m.textarea.SetValue("")
+					return m, openURL(m.designerURL)
 				case "/exit", "/quit":
 					m.status = "👋 You have left the pasture. Safe travels, little llama!"
 					return m, tea.Quit
@@ -1111,7 +1107,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messages = ctx.Messages
 					m.history = ctx.History
 					m.textarea.SetValue("")
-					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+					m.setViewportContent()
 					m.thinking = false
 					m.printing = false
 				case "/menu":
@@ -1121,7 +1117,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						var setSize tea.Cmd
 						m.quickMenu, setSize = m.quickMenu.Update(tea.WindowSizeMsg{Width: m.width, Height: m.termHeight})
 						if setSize != nil {
-							cmds = append(cmds, setSize)
+							// ignore setSize here; the menu will render with size in View()
 						}
 					}
 					m.messages = append(m.messages, Message{Role: "client", Content: "Opening Quick Menu."})
@@ -1180,8 +1176,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					m.switchDatabase(dbName)
 					m.textarea.SetValue("")
-					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-					m.viewport.GotoBottom()
+					m.refreshViewportBottom()
 
 				case "/strategy":
 					if m.currentMode != ModeProject {
@@ -1244,8 +1239,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					m.switchStrategy(strategyName)
 					m.textarea.SetValue("")
-					m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-					m.viewport.GotoBottom()
+					m.refreshViewportBottom()
 
 				default:
 					m.messages = append(m.messages, Message{Role: "client", Content: fmt.Sprintf("Unknown command '%s'. All commands must start with '/'. Type '/help' for available commands.", cmd)})
@@ -1323,7 +1317,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
+		m.setViewportContent()
 
 		if m.streamCh != nil {
 			cmds = append(cmds, listen(m.streamCh))
@@ -1387,14 +1381,12 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.DevMode {
 			if m.currentMode != ModeDev {
 				m.switchMode(ModeDev)
-				m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-				m.viewport.GotoBottom()
+				m.refreshViewportBottom()
 			}
 		} else {
 			if m.currentMode != ModeProject {
 				m.switchMode(ModeProject)
-				m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-				m.viewport.GotoBottom()
+				m.refreshViewportBottom()
 			}
 		}
 
@@ -1406,8 +1398,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uitk.SwitchModelMsg:
 		if m.currentMode == ModeProject && msg.ModelName != "" {
 			m.switchModel(msg.ModelName)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 		}
 
 	case uitk.SwitchProjectMsg:
@@ -1417,23 +1408,20 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uitk.SwitchStrategyMsg:
 		if m.currentMode == ModeProject && msg.StrategyName != "" {
 			m.switchStrategy(msg.StrategyName)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 		}
 
 	case uitk.CycleModelMsg:
 		// Ensure PROJECT mode first
 		if m.currentMode != ModeProject {
 			m.switchMode(ModeProject)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 		}
 		if len(m.availableModels) > 0 {
 			next := m.getNextModel()
 			old := m.currentModel
 			m.switchModel(next)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 			cmds = append(cmds, func() tea.Msg { return uitk.ShowToastMsg{Message: fmt.Sprintf("Switched model: %s → %s", old, next)} })
 		} else {
 			cmds = append(cmds, func() tea.Msg { return uitk.ShowToastMsg{Message: "No models available to cycle"} })
@@ -1457,13 +1445,11 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uitk.InsertChatInputMsg:
 		if msg.EnsureDev && m.currentMode != ModeDev {
 			m.switchMode(ModeDev)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 		}
 		if msg.EnsureProject && m.currentMode != ModeProject {
 			m.switchMode(ModeProject)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			m.refreshViewportBottom()
 		}
 		m.textarea.SetValue(msg.Text)
 		if msg.AutoSend {
@@ -1509,8 +1495,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.transcript = computeTranscript(m)
-	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-	m.viewport.GotoBottom()
+	m.refreshViewportBottom()
 
 	return m, tea.Batch(cmds...)
 }
@@ -1599,6 +1584,17 @@ func renderChatContent(m chatModel) string {
 	// Overlay is drawn from View() so it stays on top consistently
 
 	return b.String()
+}
+
+// setViewportContent updates the viewport with the current chat rendering.
+func (m *chatModel) setViewportContent() {
+	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(*m)))
+}
+
+// refreshViewportBottom updates the viewport and scrolls to the bottom.
+func (m *chatModel) refreshViewportBottom() {
+	m.setViewportContent()
+	m.viewport.GotoBottom()
 }
 
 func renderChatInput(m chatModel) string {
