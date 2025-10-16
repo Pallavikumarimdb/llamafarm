@@ -451,17 +451,26 @@ func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) 
 		if len(availablePrompts) > 0 {
 			pr := make([]uitk.PromptItem, 0, len(availablePrompts))
 			for _, p := range availablePrompts {
-				name := p.Name
-				if strings.TrimSpace(name) == "" {
-					// Use the first 24 chars of prompt text as a label if name missing
-					trimmed := strings.TrimSpace(p.Prompt)
-					if len(trimmed) > 24 {
-						name = trimmed[:24] + "..."
-					} else {
-						name = trimmed
-					}
+				// Prefer Content, fallback to Prompt (back-compat)
+				content := p.Content
+				if strings.TrimSpace(content) == "" {
+					content = p.Prompt
 				}
-				pr = append(pr, uitk.PromptItem{Name: name, Description: p.Description})
+				// First line: role (not truncated); default to "system" if missing
+				role := p.Role
+				if strings.TrimSpace(role) == "" {
+					role = "system"
+				}
+				name := fmt.Sprintf("role: %s", role)
+				// Second line: prompt: <content preview>
+				preview := strings.TrimSpace(content)
+				// Truncate later to give more context
+				const maxPreview = 1000
+				if len(preview) > maxPreview {
+					preview = preview[:maxPreview] + "..."
+				}
+				desc := fmt.Sprintf("prompt: %s", preview)
+				pr = append(pr, uitk.PromptItem{Name: name, Description: desc})
 			}
 			qm.Prompts = pr
 		}
@@ -1729,13 +1738,8 @@ func (m chatModel) View() string {
 	} else {
 		b.WriteString(renderChatInput(m))
 	}
-	// Always draw the status bar at the bottom; dim it when the menu is open
-	if m.quickMenu.IsActive() {
-		dim := lipgloss.NewStyle().Faint(true)
-		b.WriteString(dim.Render(renderInfoBar(m)))
-	} else {
-		b.WriteString(renderInfoBar(m))
-	}
+	// Always draw the status bar at the very bottom (no dimming)
+	b.WriteString(renderInfoBar(m))
 
 	// Toast on top-right
 	if v := m.toast.View(); v != "" {

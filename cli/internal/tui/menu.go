@@ -176,7 +176,7 @@ func NewQuickMenuModel(config *Config) QuickMenuModel {
 	// Build help entries
 	m.helpItems = []HelpItem{
 		{Label: "/help - Show this help", Command: "/help"},
-		{Label: "/mode [dev|project] - Switch mode", Command: "/mode dev", NeedsInput: true},
+		{Label: "/mode [dev|project] - Switch mode", Action: "toggle-mode"},
 		{Label: "/model [name] - Switch model (PROJECT mode)", Command: "/model ", NeedsInput: true},
 		{Label: "/database [name] - Switch RAG database (PROJECT mode)", Command: "/database ", NeedsInput: true},
 		{Label: "/strategy [name] - Switch retrieval strategy (PROJECT mode)", Command: "/strategy ", NeedsInput: true},
@@ -590,18 +590,33 @@ func (m QuickMenuModel) View() string {
 		Padding(0, 1).
 		Width(innerWidth)
 	content.WriteString(footerBox.Render(m.renderFooter()))
-	// Make the overlay a consistent height relative to terminal height
+	// Use a min height, and on Project Details tab expand to fit content (up to screen)
 	boxStyle := m.borderStyle.Width(menuWidth)
 	if m.height > 0 {
-		target := int(float64(m.height) * 0.7)
-		if target < 18 {
-			target = 18
+		// modest default height so compact tabs don't look oversized
+		minH := int(float64(m.height) * 0.6)
+		if minH < 20 {
+			minH = 20
 		}
-		if target > m.height-2 {
-			target = m.height - 2
+		maxH := m.height - 2
+		desired := minH
+		if m.activeTab == CommandsTab && (m.showModelsList || m.showDatasetsList || m.showPromptsList) {
+			// approximate content height (add small padding for borders) and cap to 80% of screen
+			contentLines := strings.Split(content.String(), "\n")
+			approx := len(contentLines) + 2
+			capH := int(float64(m.height) * 0.8)
+			if approx > desired {
+				desired = approx
+			}
+			if desired > capH {
+				desired = capH
+			}
 		}
-		if target > 0 {
-			boxStyle = boxStyle.Height(target)
+		if desired > maxH {
+			desired = maxH
+		}
+		if desired > 0 {
+			boxStyle = boxStyle.Height(desired)
 		}
 	}
 	box := boxStyle.Render(content.String())
@@ -997,14 +1012,25 @@ func (m QuickMenuModel) renderCommandsTab() string {
 				if m.cursorPos == pRowIndex {
 					pCursor = "→ "
 				}
-				line := fmt.Sprintf("%s  %s", pCursor, pr.Name)
+				// First line: role: <value> with bold label
+				roleLabel := lipgloss.NewStyle().Bold(true).Render("role:")
+				roleValue := strings.TrimPrefix(pr.Name, "role: ")
+				line := fmt.Sprintf("%s  %s %s", pCursor, roleLabel, roleValue)
 				if m.cursorPos == pRowIndex {
 					line = m.focusedStyle.Render(line)
 				}
 				s.WriteString(line + "\n")
+				// Second block: prompt: <content preview> with bold label and wrapping
 				if strings.TrimSpace(pr.Description) != "" {
-					for _, d := range wrapText(pr.Description, contentWidth-6) {
-						s.WriteString("      " + m.hintStyle.Render(d) + "\n")
+					promptVal := strings.TrimPrefix(pr.Description, "prompt: ")
+					wrapped := wrapText(promptVal, contentWidth-14) // leave room for label and indent
+					// First wrapped line with label
+					promptLabel := lipgloss.NewStyle().Bold(true).Render("prompt:")
+					if len(wrapped) > 0 {
+						s.WriteString(fmt.Sprintf("      %s %s\n", promptLabel, wrapped[0]))
+						for _, d := range wrapped[1:] {
+							s.WriteString("      " + d + "\n")
+						}
 					}
 				}
 			}
@@ -1123,6 +1149,10 @@ func (m *QuickMenuModel) handleHelpSelection() tea.Cmd {
 	}
 	if item.Action == "ctrl+t" {
 		// toggle mode without closing
+		return switchModeCmd(!m.devMode)
+	}
+	if item.Action == "toggle-mode" {
+		// Toggle mode without closing
 		return switchModeCmd(!m.devMode)
 	}
 	if item.Action == "ctrl+k" {
