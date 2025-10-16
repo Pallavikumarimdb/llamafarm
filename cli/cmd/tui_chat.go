@@ -1368,9 +1368,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update Help tab summary when health updates
 		if m.serverHealth != nil {
-			if rag := findRAGComponent(m.serverHealth); rag != nil {
-				m.quickMenu.RAGHealthSummary = "Embedder Health: 100%  |  Store Health: 100%  |  Data Processing Health: 100%  |  RAG Health: " + strings.ToUpper(rag.Status)
-			}
+			m.quickMenu.RAGHealthSummary = formatRAGHealthSummary(m.serverHealth)
 		}
 		if strings.TrimSpace(msg.Notice) != "" {
 			m.messages = append(m.messages, Message{Role: "client", Content: msg.Notice})
@@ -1567,6 +1565,64 @@ func computeTranscriptKey(m chatModel) string {
 	io.WriteString(h, msg.Role)
 	io.WriteString(h, msg.Content)
 	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// formatRAGHealthSummary builds a compact health line from the server health payload.
+// It uses the existing /health API response and extracts:
+// - RAG overall status
+// - Task system status
+// - Memory usage in MB
+func formatRAGHealthSummary(h *HealthPayload) string {
+	if h == nil {
+		return "RAG: UNKNOWN  |  Task System: UNKNOWN  |  Memory: N/A"
+	}
+	rag := findRAGComponent(h)
+	if rag == nil {
+		return "RAG: UNKNOWN  |  Task System: UNKNOWN  |  Memory: N/A"
+	}
+
+	ragStatus := strings.ToUpper(strings.TrimSpace(rag.Status))
+
+	taskStatus := "UNKNOWN"
+	memoryText := "N/A"
+
+	if rag.Details != nil {
+		// Extract task system status
+		if checksRaw, ok := rag.Details["checks"]; ok {
+			if checks, ok := checksRaw.(map[string]interface{}); ok {
+				if tsRaw, ok := checks["task_system"]; ok {
+					if ts, ok := tsRaw.(map[string]interface{}); ok {
+						if st, ok := ts["status"].(string); ok && strings.TrimSpace(st) != "" {
+							taskStatus = strings.ToUpper(st)
+						}
+					}
+				}
+			}
+		}
+		// Extract memory usage (MB)
+		if metricsRaw, ok := rag.Details["metrics"]; ok {
+			if metrics, ok := metricsRaw.(map[string]interface{}); ok {
+				if memVal, ok := metrics["memory_mb"]; ok {
+					switch v := memVal.(type) {
+					case float64:
+						memoryText = fmt.Sprintf("%.0f MB", v)
+					case float32:
+						memoryText = fmt.Sprintf("%.0f MB", v)
+					case int:
+						memoryText = fmt.Sprintf("%d MB", v)
+					case int64:
+						memoryText = fmt.Sprintf("%d MB", v)
+					case string:
+						memoryText = v + " MB"
+					default:
+						memoryText = fmt.Sprintf("%v MB", v)
+					}
+				}
+			}
+		}
+	}
+
+	return fmt.Sprintf("RAG: %s  |  Task System: %s  |  Memory: %s", ragStatus, taskStatus, memoryText)
 }
 
 func renderChatContent(m chatModel) string {
