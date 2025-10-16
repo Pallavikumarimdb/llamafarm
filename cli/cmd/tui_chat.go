@@ -169,6 +169,8 @@ type chatModel struct {
 	toast      uitk.ToastModel
 	termHeight int
 	menuActive bool
+	// Controller decouples data/state updates from the UI model
+	controller *Controller
 }
 
 // removed: old bottom menu state
@@ -464,10 +466,10 @@ func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) 
 				name := fmt.Sprintf("role: %s", role)
 				// Second line: prompt: <content preview>
 				preview := strings.TrimSpace(content)
-				// Truncate later to give more context
+				// Truncate later to give more context (UTF-8 safe)
 				const maxPreview = 1000
-				if len(preview) > maxPreview {
-					preview = preview[:maxPreview] + "..."
+				if len([]rune(preview)) > maxPreview {
+					preview = string([]rune(preview)[:maxPreview]) + "..."
 				}
 				desc := fmt.Sprintf("prompt: %s", preview)
 				pr = append(pr, uitk.PromptItem{Name: name, Description: desc})
@@ -477,6 +479,8 @@ func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) 
 	}
 
 	toast := uitk.NewToastModel()
+
+	ctrl := NewController(State{CurrentDatabase: currentDatabase, CurrentStrategy: currentStrategy, ServerHealth: serverHealth})
 
 	return chatModel{
 		serverHealth:       serverHealth,
@@ -501,6 +505,7 @@ func newChatModel(projectInfo *config.ProjectInfo, serverHealth *HealthPayload) 
 		currentStrategy:    currentStrategy,
 		quickMenu:          qm,
 		toast:              toast,
+		controller:         ctrl,
 	}
 }
 
@@ -1355,13 +1360,26 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.designerStatus = fmt.Sprintf("error: %v", msg.err)
 
 	case serverHealthMsg:
-		m.serverHealth = msg.health
+		// Delegate to controller to update state and emit a unified StateUpdateMsg
+		return m, m.controller.UpdateServerHealth(msg.health)
+
+	case StateUpdateMsg:
+		// Apply shared state changes from controller
+		m.serverHealth = msg.NewState.ServerHealth
+		if msg.NewState.CurrentDatabase != "" {
+			m.currentDatabase = msg.NewState.CurrentDatabase
+		}
+		if msg.NewState.CurrentStrategy != "" {
+			m.currentStrategy = msg.NewState.CurrentStrategy
+		}
 		// Update Help tab summary when health updates
 		if m.serverHealth != nil {
 			if rag := findRAGComponent(m.serverHealth); rag != nil {
-				// Basic breakdown; refine if server adds numeric percentages
 				m.quickMenu.RAGHealthSummary = "Embedder Health: 100%  |  Store Health: 100%  |  Data Processing Health: 100%  |  RAG Health: " + strings.ToUpper(rag.Status)
 			}
+		}
+		if strings.TrimSpace(msg.Notice) != "" {
+			m.messages = append(m.messages, Message{Role: "client", Content: msg.Notice})
 		}
 
 	case uitk.SwitchModeMsg:
@@ -1382,9 +1400,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case uitk.SwitchDatabaseMsg:
 		if m.currentMode == ModeProject && msg.DatabaseName != "" {
-			m.switchDatabase(msg.DatabaseName)
-			m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(renderChatContent(m)))
-			m.viewport.GotoBottom()
+			return m, m.controller.SwitchDatabase(msg.DatabaseName, m.availableDatabases)
 		}
 
 	case uitk.SwitchModelMsg:
@@ -1451,11 +1467,13 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.textarea.SetValue(msg.Text)
 		if msg.AutoSend {
-			// Trigger the same flow as pressing Enter (slash commands will be handled in next cycle)
+			// Emulate Enter key handling: add message, clear input, and trigger processing
 			m.err = nil
 			val := strings.TrimSpace(msg.Text)
 			if val != "" {
 				m.messages = append(m.messages, Message{Role: "client", Content: val})
+				m.textarea.SetValue("")
+				return m, func() tea.Msg { return tea.KeyMsg{Type: tea.KeyEnter} }
 			}
 		}
 

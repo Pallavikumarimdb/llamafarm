@@ -91,7 +91,7 @@ type DatasetBrief struct {
 
 // fetchAvailableDatasets fetches datasets for a project
 func fetchAvailableDatasets(serverURL, namespace, projectID string) []DatasetBrief {
-	url := fmt.Sprintf("%s/v1/projects/%s/%s/datasets/?include_extra_details=false",
+	url := fmt.Sprintf("%s/v1/projects/%s/%s/datasets?include_extra_details=false",
 		strings.TrimSuffix(serverURL, "/"),
 		namespace,
 		projectID)

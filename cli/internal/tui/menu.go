@@ -254,12 +254,14 @@ func (m QuickMenuModel) Update(msg tea.Msg) (QuickMenuModel, tea.Cmd) {
 			m.currentStrategy = m.strategies[0].Name
 			m.strategies[0].IsActive = true
 		}
+		m.clampCursor()
 		return m, nil
 	case SwitchModelMsg:
 		m.currentModel = msg.ModelName
 		for i := range m.models {
 			m.models[i].IsActive = (m.models[i].Name == msg.ModelName)
 		}
+		m.clampCursor()
 		return m, nil
 	case SwitchProjectMsg:
 		m.currentProject = msg.ProjectName
@@ -267,12 +269,14 @@ func (m QuickMenuModel) Update(msg tea.Msg) (QuickMenuModel, tea.Cmd) {
 		for i := range m.projects {
 			m.projects[i].IsActive = (m.projects[i].Name == msg.ProjectName && m.projects[i].Namespace == msg.Namespace)
 		}
+		m.clampCursor()
 		return m, nil
 	case SwitchStrategyMsg:
 		m.currentStrategy = msg.StrategyName
 		for i := range m.strategies {
 			m.strategies[i].IsActive = (m.strategies[i].Name == msg.StrategyName)
 		}
+		m.clampCursor()
 		return m, nil
 	case tea.KeyMsg:
 		if m.menuState == ProjectSelectState {
@@ -293,41 +297,29 @@ func (m QuickMenuModel) Update(msg tea.Msg) (QuickMenuModel, tea.Cmd) {
 			m.cursorPos = 0
 			return m, nil
 		case "up":
-			// Wrap-around navigation
+			if m.activeTab == HelpTab {
+				m.moveCursorHelpTab(-1)
+				return m, nil
+			}
+			// Wrap-around navigation for other tabs
 			maxPos := m.getMaxCursorPos()
 			if m.cursorPos > 0 {
 				m.cursorPos--
 			} else {
 				m.cursorPos = maxPos
 			}
-			// Skip /menu line in Help tab
-			if m.activeTab == HelpTab && m.cursorPos >= 0 && m.cursorPos < len(m.helpItems) {
-				if strings.HasPrefix(m.helpItems[m.cursorPos].Label, "/menu") {
-					if m.cursorPos > 0 {
-						m.cursorPos--
-					} else {
-						m.cursorPos = maxPos
-					}
-				}
-			}
 			return m, nil
 		case "down":
-			// Wrap-around navigation
+			if m.activeTab == HelpTab {
+				m.moveCursorHelpTab(1)
+				return m, nil
+			}
+			// Wrap-around navigation for other tabs
 			maxPos := m.getMaxCursorPos()
 			if m.cursorPos < maxPos {
 				m.cursorPos++
 			} else {
 				m.cursorPos = 0
-			}
-			// Skip /menu line in Help tab
-			if m.activeTab == HelpTab && m.cursorPos >= 0 && m.cursorPos < len(m.helpItems) {
-				if strings.HasPrefix(m.helpItems[m.cursorPos].Label, "/menu") {
-					if m.cursorPos < maxPos {
-						m.cursorPos++
-					} else {
-						m.cursorPos = 0
-					}
-				}
 			}
 			return m, nil
 		case "enter":
@@ -381,8 +373,12 @@ func (m QuickMenuModel) getMaxCursorPos() int {
 		if m.showModelsList && len(m.models) > 0 {
 			extra += len(m.models)
 		}
-		if m.showDatasetsList && len(m.Datasets) > 0 { // Changed from m.databases to m.Datasets
-			extra += len(m.Datasets)
+		if m.showDatasetsList {
+			count := len(m.Datasets)
+			if count == 0 {
+				count = len(m.databases)
+			}
+			extra += count
 		}
 		if m.showPromptsList && len(m.Prompts) > 0 {
 			extra += len(m.Prompts)
@@ -394,6 +390,64 @@ func (m QuickMenuModel) getMaxCursorPos() int {
 		return len(m.helpItems) - 1
 	default:
 		return 0
+	}
+}
+
+// clampCursor ensures the cursor stays within the valid range for the active tab
+func (m *QuickMenuModel) clampCursor() {
+	max := m.getMaxCursorPos()
+	if max < 0 {
+		max = 0
+	}
+	if m.cursorPos > max {
+		m.cursorPos = max
+	}
+	if m.cursorPos < 0 {
+		m.cursorPos = 0
+	}
+}
+
+// isHelpItemSelectable returns whether the given help item index can be focused/selected
+func (m QuickMenuModel) isHelpItemSelectable(idx int) bool {
+	if idx < 0 || idx >= len(m.helpItems) {
+		return false
+	}
+	item := m.helpItems[idx]
+	// Skip the /menu line and any purely informational rows (no command and no action)
+	if strings.HasPrefix(item.Label, "/menu") {
+		return false
+	}
+	if strings.TrimSpace(item.Label) == "" {
+		return false
+	}
+	if item.Command == "" && item.Action == "" {
+		return false
+	}
+	return true
+}
+
+// moveCursorHelpTab moves the cursor up/down skipping any non-selectable help rows, with wrap-around
+func (m *QuickMenuModel) moveCursorHelpTab(delta int) {
+	if len(m.helpItems) == 0 {
+		m.cursorPos = 0
+		return
+	}
+	maxPos := len(m.helpItems) - 1
+	// attempt up to N steps to find a selectable row to avoid infinite loops
+	attempts := 0
+	newPos := m.cursorPos
+	for attempts <= len(m.helpItems) {
+		newPos += delta
+		if newPos < 0 {
+			newPos = maxPos
+		} else if newPos > maxPos {
+			newPos = 0
+		}
+		if m.isHelpItemSelectable(newPos) {
+			m.cursorPos = newPos
+			return
+		}
+		attempts++
 	}
 }
 
@@ -465,6 +519,7 @@ func (m *QuickMenuModel) handleSelectionAndRun() tea.Cmd {
 		// Handle row 0 toggle
 		if m.cursorPos == base {
 			m.showModelsList = !m.showModelsList
+			m.clampCursor()
 			return nil
 		}
 
@@ -482,6 +537,7 @@ func (m *QuickMenuModel) handleSelectionAndRun() tea.Cmd {
 		// list datasets command lives at 'next'
 		if m.cursorPos == next {
 			m.showDatasetsList = !m.showDatasetsList
+			m.clampCursor()
 			return nil
 		}
 		next += 1
@@ -506,6 +562,7 @@ func (m *QuickMenuModel) handleSelectionAndRun() tea.Cmd {
 		// list prompts command at 'next'
 		if m.cursorPos == next {
 			m.showPromptsList = !m.showPromptsList
+			m.clampCursor()
 			return nil
 		}
 		next += 1
@@ -731,16 +788,13 @@ func (m QuickMenuModel) renderContextTab() string {
 		if db.IsActive {
 			active = "✓"
 		}
-		status := ""
-		if db.IsActive {
-			status = " [active]"
-		}
 		// Highlight active database name in accent color
 		name := db.Name
 		if db.IsActive {
 			name = lipgloss.NewStyle().Foreground(m.activeColor).Bold(true).Render(name)
 		}
-		line := fmt.Sprintf("%s%s %-*s (%d docs)%s", cursor, active, nameColWidth, name, db.DocCount, status)
+		// Render without doc counts or explicit [active] label (checkmark and highlight suffice)
+		line := fmt.Sprintf("%s%s %-*s", cursor, active, nameColWidth, name)
 		if itemIndex == m.cursorPos {
 			line = m.focusedStyle.Render(line)
 		}
@@ -787,16 +841,15 @@ func (m QuickMenuModel) renderContextTab() string {
 			cursor = "→ "
 		}
 		active := " "
-		status := ""
 		if model.IsActive {
 			active = "✓"
-			status = " [active]"
 		}
 		name := model.Name
 		if model.IsActive {
 			name = lipgloss.NewStyle().Foreground(m.activeColor).Bold(true).Render(name)
 		}
-		line := fmt.Sprintf("%s%s %s (%s)%s", cursor, active, name, model.Provider, status)
+		// Render without explicit [active] label
+		line := fmt.Sprintf("%s%s %s (%s)", cursor, active, name, model.Provider)
 		if modelIndex == m.cursorPos {
 			line = m.focusedStyle.Render(line)
 		}
@@ -1099,13 +1152,12 @@ func (m QuickMenuModel) renderHelpTab() string {
 	for idx := 0; idx < len(m.helpItems)-1; idx++ {
 		item := m.helpItems[idx]
 		cursor := "  "
-		// Skip making /menu line focusable
-		isMenuLine := strings.HasPrefix(item.Label, "/menu")
-		if idx == m.cursorPos && !isMenuLine {
+		selectable := m.isHelpItemSelectable(idx)
+		if idx == m.cursorPos && selectable {
 			cursor = "→ "
 		}
 		line := cursor + item.Label
-		if idx == m.cursorPos && !isMenuLine {
+		if idx == m.cursorPos && selectable {
 			line = m.focusedStyle.Render(line)
 		}
 		s.WriteString(line + "\n")
