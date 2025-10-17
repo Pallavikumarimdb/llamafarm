@@ -29,15 +29,16 @@ type Dataset struct {
 	Files  []string `yaml:"files" toml:"files"`
 }
 
-// Prompt represents a prompt configuration
+// PromptMessage represents a single message in a prompt set
+type PromptMessage struct {
+	Role    string `yaml:"role,omitempty" json:"role,omitempty"`
+	Content string `yaml:"content" json:"content"`
+}
+
+// Prompt represents a named prompt set configuration
 type Prompt struct {
-	Name    string `yaml:"name,omitempty" toml:"name,omitempty"`
-	Role    string `yaml:"role,omitempty" toml:"role,omitempty"`
-	Content string `yaml:"content,omitempty" toml:"content,omitempty"`
-	// Back-compat: some configs may use `prompt` instead of `content`.
-	// When both `content` and `prompt` are present, `content` takes precedence.
-	Prompt      string `yaml:"prompt,omitempty" toml:"prompt,omitempty"`
-	Description string `yaml:"description,omitempty" toml:"description,omitempty"`
+	Name     string          `yaml:"name" toml:"name" json:"name"`
+	Messages []PromptMessage `yaml:"messages" toml:"messages" json:"messages"`
 }
 
 // RAGConfig represents the RAG configuration
@@ -92,6 +93,7 @@ type DefaultsConfig struct {
 
 // Model represents a model configuration
 type Model struct {
-	Provider string `yaml:"provider" toml:"provider"`
-	Model    string `yaml:"model" toml:"model"`
+	Provider string   `yaml:"provider" toml:"provider"`
+	Model    string   `yaml:"model" toml:"model"`
+	Prompts  []string `yaml:"prompts,omitempty" toml:"prompts,omitempty" json:"prompts,omitempty"`
 }
