@@ -3,6 +3,13 @@ import Message from './Message'
 import FontIcon from '../../common/FontIcon'
 import useChatboxWithProjectSession from '../../hooks/useChatboxWithProjectSession'
 import { useActiveProject } from '../../hooks/useActiveProject'
+import { useProjectSession } from '../../hooks/useProjectSession'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
 
 interface ChatboxProps {
   isPanelOpen: boolean
@@ -38,6 +45,9 @@ function Chatbox({
 
   const activeProject = useActiveProject()
   const activeProjectName = activeProject?.project || ''
+  // For minimal session picker: reuse session manager to list/select sessions
+  const sessionMgr = useProjectSession({ chatService: 'designer' })
+  const sessions = sessionMgr.listSessions()
 
   // Refs for auto-scroll
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -172,6 +182,26 @@ function Chatbox({
               {isClearing ? 'Clearing...' : 'Clear'}
             </button>
           )}
+          {isPanelOpen && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="ml-2 text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80">
+                {sessionId ? 'Session' : 'New chat…'}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => sessionMgr.selectSession('')}>
+                  New chat…
+                </DropdownMenuItem>
+                {sessions.map(s => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onClick={() => sessionMgr.selectSession(s.id)}
+                  >
+                    {new Date(s.lastUsed).toLocaleString()} ({s.messageCount})
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         {/* Centered project title on mobile */}
         <span className="md:hidden absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground truncate max-w-[60vw] pointer-events-none">
@@ -220,20 +250,52 @@ function Chatbox({
           <div ref={endRef} />
         </div>
         <div className="flex flex-col gap-3 p-3 rounded-lg bg-secondary mt-auto sticky bottom-4">
-          <textarea
-            value={inputValue}
-            onChange={e => updateInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isSending}
-            className="w-full h-10 resize-none bg-transparent border-none placeholder-opacity-60 focus:outline-none focus:ring-0 font-sans text-sm sm:text-base leading-relaxed overflow-hidden text-foreground placeholder-foreground/60 disabled:opacity-50"
-            placeholder={
-              isStreaming
-                ? 'Streaming response...'
-                : isSending
-                  ? 'Waiting for response...'
-                  : 'Type here...'
-            }
-          />
+          <div className="relative">
+            <textarea
+              value={inputValue}
+              onChange={e => updateInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isSending}
+              className="w-full h-10 pr-10 resize-none bg-transparent border-none placeholder-opacity-60 focus:outline-none focus:ring-0 font-sans text-sm sm:text-base leading-relaxed overflow-hidden text-foreground placeholder-foreground/60 disabled:opacity-50"
+              placeholder={
+                isStreaming
+                  ? 'Streaming response...'
+                  : isSending
+                    ? 'Waiting for response...'
+                    : 'Type here...'
+              }
+            />
+            {/* Action button overlays top-right inside the input area, same spot for send/stop */}
+            {isStreaming ? (
+              <button
+                onClick={cancelStreaming}
+                className="absolute right-2 top-2 z-10 w-8 h-8 rounded-full flex items-center justify-center text-primary hover:opacity-80"
+                aria-label="Stop response"
+              >
+                <svg viewBox="0 0 24 24" className="w-6 h-6" aria-hidden="true">
+                  <rect
+                    x="6"
+                    y="6"
+                    width="12"
+                    height="12"
+                    rx="2"
+                    className="fill-current"
+                  />
+                </svg>
+              </button>
+            ) : (
+              <FontIcon
+                isButton
+                type="arrow-filled"
+                className={`absolute right-2 top-2 z-10 w-8 h-8 ${
+                  inputValue.trim().length === 0
+                    ? 'text-muted-foreground opacity-50 cursor-not-allowed'
+                    : 'text-primary hover:opacity-80'
+                }`}
+                handleOnClick={handleSendClick}
+              />
+            )}
+          </div>
           <div className="flex justify-between items-center">
             {(isSending || isStreaming) && (
               <span className="text-xs text-muted-foreground flex items-center gap-2">
@@ -241,24 +303,12 @@ function Chatbox({
                   <>
                     <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-teal-500" />
                     Streaming response...
-                    <button
-                      onClick={cancelStreaming}
-                      className="ml-2 text-xs px-2 py-1 rounded bg-red-500 hover:bg-red-600 text-white"
-                    >
-                      Cancel
-                    </button>
                   </>
                 ) : (
                   'Sending message...'
                 )}
               </span>
             )}
-            <FontIcon
-              isButton
-              type="arrow-filled"
-              className={`w-8 h-8 self-end ${!canSend ? 'text-muted-foreground opacity-50' : 'text-primary'}`}
-              handleOnClick={handleSendClick}
-            />
           </div>
         </div>
       </div>

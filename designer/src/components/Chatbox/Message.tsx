@@ -7,6 +7,32 @@ export interface MessageProps {
 const Message: React.FC<MessageProps> = ({ message }) => {
   const { type, content, isLoading, isStreaming } = message
 
+  // Minimal markdown renderer for bold and inline code with HTML escaping
+  const renderMarkdown = (text: string): { __html: string } => {
+    const escapeHtml = (s: string) =>
+      s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+    // Escape first
+    let html = escapeHtml(text)
+    // Inline code `code`
+    html = html.replace(
+      /`([^`]+)`/g,
+      '<code class="px-1 py-0.5 rounded bg-muted/60">$1</code>'
+    )
+    // Bold **text**
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // Italic *text* (after bold so it does not conflict)
+    html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+    // Preserve line breaks
+    html = html.replace(/\n/g, '<br/>')
+    return { __html: html }
+  }
+
   const getMessageStyles = (): string => {
     const baseStyles = 'flex flex-col mb-4'
 
@@ -38,15 +64,21 @@ const Message: React.FC<MessageProps> = ({ message }) => {
   return (
     <div className={getMessageStyles()}>
       <div className={getContentStyles()}>
-        {isLoading && type === 'assistant' ? (
-          <span className="italic opacity-70">{content}</span>
-        ) : isStreaming && type === 'assistant' ? (
-          <span className="relative">
-            {content}
-            <span className="inline-block ml-1 w-2 h-5 bg-current animate-pulse" />
-          </span>
+        {type === 'assistant' ? (
+          isLoading ? (
+            <span className="italic opacity-70">{content}</span>
+          ) : (
+            <span
+              className="whitespace-pre-wrap"
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={renderMarkdown(content)}
+            />
+          )
         ) : (
-          content
+          <span className="whitespace-pre-wrap">{content}</span>
+        )}
+        {isStreaming && type === 'assistant' && (
+          <span className="inline-block ml-1 w-2 h-5 bg-current animate-pulse" />
         )}
       </div>
     </div>
