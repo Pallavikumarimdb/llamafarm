@@ -10,7 +10,9 @@ interface MarkdownProps {
 const Markdown: React.FC<MarkdownProps> = ({ content, className }) => {
   return (
     <div className={className}>
-      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
+      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }

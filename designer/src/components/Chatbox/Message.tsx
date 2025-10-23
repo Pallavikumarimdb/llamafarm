@@ -50,7 +50,7 @@ const Message: React.FC<MessageProps> = ({ message }) => {
             <span className="italic opacity-70">{content}</span>
           ) : (
             <Markdown
-              className="whitespace-pre-wrap leading-relaxed"
+              className="leading-relaxed break-words [&>p]:my-2 [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:mt-3 [&>h2]:mb-2 [&>h3]:mt-2 [&>h3]:mb-1 [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-1"
               content={content}
             />
           )
