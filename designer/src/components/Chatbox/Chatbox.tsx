@@ -76,7 +76,8 @@ function Chatbox({
       sessionId === null // Only if no existing session
     ) {
       // Use the existing sendMessage function - this will trigger normal session creation
-      sendMessage(initialMessage)
+      const briefKickoff = `${initialMessage}\n\nPlease answer briefly (one or two sentences).`
+      sendMessage(briefKickoff)
       setHasProcessedInitialMessage(true)
     }
   }, [
@@ -231,10 +232,45 @@ function Chatbox({
         </div>
       )}
 
-      {/* Error display */}
+      {/* Error/empty state banner (dark-mode friendly) */}
       {error && isPanelOpen && (
-        <div className="mx-4 mb-2 p-2 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
-          {error}
+        <div className="mx-4 mb-2 rounded-xl border border-border bg-card/40">
+          <div className="px-3 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+                !
+              </span>
+              <div className="text-sm">
+                <div className="font-medium text-foreground">
+                  Project setup required
+                </div>
+                <div className="text-xs text-muted-foreground">{error}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  window.open(
+                    'https://github.com/llama-farm/llamafarm#quickstart',
+                    '_blank'
+                  )
+                }
+                className="text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80"
+              >
+                Docs
+              </button>
+              <button
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent('lf-open-create-project')
+                  )
+                }
+                className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
+              >
+                Create project
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -246,8 +282,26 @@ function Chatbox({
           className="flex-1 overflow-y-auto flex flex-col gap-5 pr-1"
         >
           {!hasMessages ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              Start a conversation...
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center px-6 py-10 rounded-xl border border-border bg-card/40 max-w-[560px]">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 border border-primary/30">
+                  <span className="text-primary text-lg">💬</span>
+                </div>
+                <div className="text-base font-medium">
+                  Start a conversation
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  Type a message below to chat with your model.
+                </div>
+                {error && (
+                  <div className="mt-3 text-xs text-red-400">
+                    Set up a project config first to get responses.
+                  </div>
+                )}
+                <div className="mt-3 text-xs text-muted-foreground">
+                  Tip: Press Enter to send
+                </div>
+              </div>
             </div>
           ) : (
             messages.map(message => (
