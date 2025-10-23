@@ -65,7 +65,8 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
   const fallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isMountedRef = useRef(true)
 
-  // API hooks (project-scoped)
+  // API hooks (project-scoped); must be called unconditionally to satisfy React rules.
+  // We will guard usage when ns/proj are missing.
   const projectChat = useProjectChat(ns, proj)
   const deleteProjectSessionMutation = useDeleteProjectChatSession(ns, proj)
 
@@ -104,6 +105,12 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
 
       try {
         const chatRequest = createChatRequest(messageContent)
+        // Guard project presence
+        if (!ns || !proj) {
+          setError('Select or create a project before chatting.')
+          onError(new Error('No active project'))
+          return
+        }
         const response = await projectChat.mutateAsync({
           chatRequest,
           sessionId: currentSessionId,
@@ -129,7 +136,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         )
       }
     },
-    [projectChat]
+    [projectChat, ns, proj]
   )
 
   // Add message to both streaming state and project session
@@ -218,7 +225,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         return false
       }
 
-      if (projectChat.isPending || isStreaming) {
+      if ((projectChat?.isPending ?? false) || isStreaming) {
         return false
       }
 
@@ -282,8 +289,6 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
           }, 60000)
 
           let accumulatedContent = ''
-          let deferredSessionId: string | null = null
-
           const responseSessionId = await chatProjectStreaming(
             ns,
             proj,
@@ -310,21 +315,21 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
                 clearTimeout(timeoutId)
                 setIsStreaming(false)
 
-                // Remove streaming message
-                setStreamingMessages(prev =>
-                  prev.filter(msg => msg.id !== assistantMessageId)
-                )
-
-                // Only attempt fallback for network errors that are NOT user-initiated cancellations
-                // User cancellations (AbortError) should not trigger fallback
-                const isUserCancellation =
+                // Determine cancellation vs other errors
+                const isAbortError =
                   error instanceof Error && error.name === 'AbortError'
-                const isNetworkError =
+                const isWrappedCancel =
                   error instanceof NetworkError &&
-                  (error.message.includes('cancelled') ||
-                    error.message.includes('aborted'))
+                  (error.message.toLowerCase().includes('cancelled') ||
+                    error.message.toLowerCase().includes('canceled') ||
+                    error.message.toLowerCase().includes('aborted'))
+                const isUserCancelled =
+                  isAbortError ||
+                  (error as any)?.code === 'USER_CANCELLED' ||
+                  error.name === 'UserCancelledError' ||
+                  isWrappedCancel
 
-                if (isNetworkError && !isUserCancellation) {
+                if (!isUserCancelled && error instanceof NetworkError) {
                   // Clear any existing fallback timeout
                   if (fallbackTimeoutRef.current) {
                     clearTimeout(fallbackTimeoutRef.current)
@@ -388,11 +393,15 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
                     )
                   }, 100)
                 } else {
-                  // For user cancellations: add subtle system note only; suppress toast
-                  if (isUserCancellation) {
+                  // For user cancellations: keep partial text, mark cancelled; suppress toast
+                  if (isUserCancelled) {
                     setError(null)
                     setStreamingMessages(prev =>
-                      prev.filter(m => !m.isStreaming)
+                      prev.map(m =>
+                        m.id === assistantMessageId
+                          ? { ...m, isStreaming: false, cancelled: true }
+                          : m
+                      )
                     )
                     addMessage({
                       type: 'system',
@@ -518,16 +527,21 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
             }
           )
 
-          // Store session ID for deferred processing after all messages are added
-          if (responseSessionId) {
-            deferredSessionId = responseSessionId
-          }
+          // With fixed session IDs, no reconciliation needed
 
           // For streaming, we return true immediately as the request is initiated
           // The actual success/failure will be handled by the streaming callbacks
           return true
         } else {
           // Non-streaming path
+          if (!ns || !proj) {
+            setError('Select or create a project before chatting.')
+            return false
+          }
+          if (!projectChat) {
+            setError('Select or create a project before chatting.')
+            return false
+          }
           const response = await projectChat.mutateAsync({
             chatRequest,
             sessionId: fixedSessionId || undefined,
@@ -573,22 +587,32 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         console.error('Chat error:', error)
         setIsStreaming(false)
 
-        // If user cancelled, suppress toast and extra messages
-        if (
-          (error instanceof Error && error.name === 'AbortError') ||
-          (error instanceof NetworkError &&
-            (error.message.includes('cancelled') ||
-              error.message.includes('canceled') ||
-              error.message.includes('aborted')))
-        ) {
+        // If user cancelled, suppress toast and extra messages but keep partials marked cancelled
+        const isAbortError =
+          error instanceof Error && error.name === 'AbortError'
+        const isWrappedCancel =
+          error instanceof NetworkError &&
+          (error.message.toLowerCase().includes('cancelled') ||
+            error.message.toLowerCase().includes('canceled') ||
+            error.message.toLowerCase().includes('aborted'))
+        const isUserCancelled =
+          isAbortError ||
+          (error as any)?.code === 'USER_CANCELLED' ||
+          error?.name === 'UserCancelledError' ||
+          isWrappedCancel
+        if (isUserCancelled) {
           setError(null)
           setStreamingMessages(prev =>
-            prev.filter(msg => msg.id !== assistantMessageId)
+            prev.map(m =>
+              m.id === assistantMessageId
+                ? { ...m, isStreaming: false, cancelled: true }
+                : m
+            )
           )
           return false
         }
 
-        // Remove loading/streaming message
+        // For other errors, remove the temporary streaming message
         setStreamingMessages(prev =>
           prev.filter(msg => msg.id !== assistantMessageId)
         )
@@ -630,13 +654,13 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
 
   // Handle clear chat
   const clearChat = useCallback(async () => {
-    if (deleteProjectSessionMutation.isPending) return false
+    if (deleteProjectSessionMutation?.isPending) return false
 
     try {
       // Delete on server if we have a current session
       if (projectSession.sessionId) {
         try {
-          await deleteProjectSessionMutation.mutateAsync(
+          await deleteProjectSessionMutation?.mutateAsync(
             projectSession.sessionId
           )
         } catch (e) {
@@ -676,7 +700,13 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
       setIsStreaming(false)
 
       // Update any streaming messages to show they were cancelled
-      setStreamingMessages(prev => prev.filter(msg => !msg.isStreaming))
+      setStreamingMessages(prev =>
+        prev.map(msg =>
+          msg.isStreaming
+            ? { ...msg, isStreaming: false, cancelled: true }
+            : msg
+        )
+      )
       // onError will append the single system line; suppress toast
       setError(null)
     }
@@ -706,9 +736,9 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     error: error || projectSession.error,
 
     // Loading states
-    isSending: projectChat.isPending || isStreaming,
+    isSending: (projectChat?.isPending ?? false) || isStreaming,
     isStreaming,
-    isClearing: deleteProjectSessionMutation.isPending,
+    isClearing: deleteProjectSessionMutation?.isPending ?? false,
     isLoadingSession,
 
     // Actions
@@ -727,7 +757,9 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     // Computed values
     hasMessages: currentMessages.length > 0,
     canSend:
-      !projectChat.isPending && !isStreaming && inputValue.trim().length > 0,
+      !(projectChat?.isPending ?? false) &&
+      !isStreaming &&
+      inputValue.trim().length > 0,
   }
 
   return result

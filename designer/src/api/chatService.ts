@@ -117,7 +117,10 @@ export async function chatProjectStreaming(
       headers['X-Session-ID'] = sessionId
     }
 
-    const baseURL = apiClient.defaults.baseURL || ''
+    const rawBaseURL = apiClient.defaults.baseURL || ''
+    const baseURL = rawBaseURL.endsWith('/')
+      ? rawBaseURL.slice(0, -1)
+      : rawBaseURL
     const url = `${baseURL}/projects/${encodeURIComponent(namespace)}/${encodeURIComponent(project)}/chat/completions`
 
     const response = await fetch(url, {

@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useActiveProject } from './useActiveProject'
 import {
-  findExistingSession,
   getStoredSessions,
   saveStoredSessions,
   createMessage,
@@ -125,19 +124,24 @@ export function useProjectSession(
       return
     }
 
-    if (activeProject) {
-      const id = makeFixedId(
-        activeProject.namespace,
-        activeProject.project,
-        chatService
-      )
+    const ns = activeProject?.namespace?.trim()
+    const project = activeProject?.project?.trim()
+
+    if (ns && project) {
+      const id = makeFixedId(ns, project, chatService)
       setSessionId(id)
-      const sessions = getStoredSessions()
-      const sessionData = sessions[id]
+      let sessions = getStoredSessions()
+      let sessionData = sessions[id]
+      // Ensure a persistent session record exists so messages survive refresh
+      if (!sessionData) {
+        createPersistentSession(id, ns, project, chatService, [])
+        sessions = getStoredSessions()
+        sessionData = sessions[id]
+      }
       setMessages(sessionData ? sessionData.messages : [])
       setTempMessages([])
     } else {
-      // No active project
+      // No valid active project; use temporary mode
       setSessionId(null)
       setMessages([])
       setTempMessages([])
@@ -180,50 +184,7 @@ export function useProjectSession(
     [sessionId]
   )
 
-  // Helper function to transfer temp messages to a server session
-  const transferToServerSession = useCallback(
-    (serverSessionId: string, tempMessages: ChatMessage[]) => {
-      transferLockRef.current = true
-
-      try {
-        if (!activeProject) {
-          return
-        }
-
-        // Filter out any "Thinking..." placeholder messages before transfer
-        const messagesToTransfer = tempMessages.filter(msg => {
-          const isThinkingPlaceholder =
-            msg.content === 'Thinking...' && msg.role === 'assistant'
-          return !isThinkingPlaceholder
-        })
-
-        // Create persistent session with filtered messages
-        createPersistentSession(
-          serverSessionId,
-          activeProject.namespace,
-          activeProject.project,
-          chatService,
-          messagesToTransfer
-        )
-
-        // Update local state to persistent mode
-        setSessionId(serverSessionId)
-        setMessages(messagesToTransfer)
-        setTempMessages([])
-
-        // Verify state after a tick to ensure React has processed the updates
-        setTimeout(() => {
-          // State verification after transfer
-        }, 0)
-      } finally {
-        // Always release the transfer lock
-        setTimeout(() => {
-          transferLockRef.current = false
-        }, 100)
-      }
-    },
-    [activeProject, chatService]
-  )
+  // transferToServerSession removed for single fixed session model
 
   // Main function to add messages (chooses temp vs persistent based on mode)
   const addMessage = useCallback(

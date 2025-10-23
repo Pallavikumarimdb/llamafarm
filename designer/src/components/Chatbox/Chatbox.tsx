@@ -3,13 +3,6 @@ import Message from './Message'
 import FontIcon from '../../common/FontIcon'
 import useChatboxWithProjectSession from '../../hooks/useChatboxWithProjectSession'
 import { useActiveProject } from '../../hooks/useActiveProject'
-import { useProjectSession } from '../../hooks/useProjectSession'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu'
 
 interface ChatboxProps {
   isPanelOpen: boolean
@@ -45,14 +38,7 @@ function Chatbox({
 
   const activeProject = useActiveProject()
   const activeProjectName = activeProject?.project || ''
-  // Feature toggle: hide sessions menu for a simpler chat experience
-  const showSessionsMenu = false as const
-  // Only initialize session manager if menu is shown
-  const sessionMgr = showSessionsMenu
-    ? useProjectSession({ chatService: 'designer' })
-    : null
-  const sessions =
-    showSessionsMenu && sessionMgr ? sessionMgr.listSessions() : []
+  // Session list UI removed: single session per project
 
   // Refs for auto-scroll
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -187,28 +173,6 @@ function Chatbox({
             >
               {isClearing ? 'Clearing...' : 'Clear'}
             </button>
-          )}
-          {isPanelOpen && showSessionsMenu && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="ml-2 text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80">
-                {sessionId ? 'Session' : 'New chat…'}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onClick={() => sessionMgr && sessionMgr.selectSession('')}
-                >
-                  New chat…
-                </DropdownMenuItem>
-                {sessions.map(s => (
-                  <DropdownMenuItem
-                    key={s.id}
-                    onClick={() => sessionMgr && sessionMgr.selectSession(s.id)}
-                  >
-                    {new Date(s.lastUsed).toLocaleString()} ({s.messageCount})
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
           )}
         </div>
         {/* Centered project title on mobile */}
