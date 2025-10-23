@@ -6,24 +6,12 @@
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-// Minimal mutation interface to avoid inference issues in strict builds
-type ProjectChatMutation = {
-  mutateAsync: (args: {
-    chatRequest: ChatRequest
-    sessionId?: string
-  }) => Promise<{ data: ChatResponse; sessionId: string }>
-  isPending?: boolean
-}
 import { useDeleteProjectChatSession, useProjectChat } from './useChat'
+import type { ProjectChatMutation } from './useChat'
 import { createChatRequest, chatProjectStreaming } from '../api/chatService'
 import { useProjectSession } from './useProjectSession'
 import { ChatboxMessage } from '../types/chatbox'
-import {
-  ChatStreamChunk,
-  NetworkError,
-  ChatRequest,
-  ChatResponse,
-} from '../types/chat'
+import { ChatStreamChunk, NetworkError } from '../types/chat'
 import { generateMessageId } from '../utils/idGenerator'
 import { useActiveProject } from './useActiveProject'
 
@@ -62,11 +50,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
   const ns = activeProject?.namespace || ''
   const proj = activeProject?.project || ''
 
-  // Deterministic per-project session ID for Designer chat
-  const fixedSessionId = useMemo(
-    () => (ns && proj ? `${ns}:${proj}:designer` : ''),
-    [ns, proj]
-  )
+  // Use sessionId from projectSession; do not create local fixed IDs here
 
   // UI state
   const [inputValue, setInputValue] = useState('')
@@ -75,163 +59,46 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
 
   // Refs for streaming
   const streamingAbortControllerRef = useRef<AbortController | null>(null)
-  const fallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Fallback removed; no timeout tracking required
   const isMountedRef = useRef(true)
 
   // API hooks (project-scoped); must be called unconditionally to satisfy React rules.
   // We will guard usage when ns/proj are missing.
-  const projectChat: ProjectChatMutation = useProjectChat(
-    ns,
-    proj
-  ) as unknown as ProjectChatMutation
+  const projectChat = useProjectChat(ns, proj) as unknown as ProjectChatMutation
   const deleteProjectSessionMutation = useDeleteProjectChatSession(ns, proj)
 
   // Get current state from project session system (always used)
-  const currentSessionId = fixedSessionId || projectSession.sessionId
   const projectSessionMessages = useMemo(() => {
     return projectSession.messages.map(projectSessionToChatboxMessage)
-  }, [projectSession.messages, currentSessionId])
+  }, [projectSession.messages])
   const isLoadingSession = false // Session loading is now synchronous
 
   // Cleanup timeout and abort streaming on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false
-      if (fallbackTimeoutRef.current) {
-        clearTimeout(fallbackTimeoutRef.current)
-      }
       if (streamingAbortControllerRef.current) {
         streamingAbortControllerRef.current.abort()
       }
     }
   }, [])
 
-  // Helper function to execute fallback non-streaming request
-  const executeFallbackRequest = useCallback(
-    async (
-      messageContent: string,
-      currentSessionId: string,
-      onSuccess: (response: any) => void,
-      onError: (error: Error) => void
-    ) => {
-      // Check if component is still mounted before proceeding
-      if (!isMountedRef.current) {
-        return
-      }
-
-      try {
-        const chatRequest = createChatRequest(messageContent)
-        // Guard project presence
-        if (!ns || !proj) {
-          setError('Select or create a project before chatting.')
-          onError(new Error('No active project'))
-          return
-        }
-        const response = await (projectChat as any).mutateAsync({
-          chatRequest,
-          sessionId: currentSessionId,
-        })
-
-        // Check if component is still mounted before updating state
-        if (!isMountedRef.current) {
-          return
-        }
-
-        onSuccess(response)
-      } catch (fallbackError) {
-        // Check if component is still mounted before updating state
-        if (!isMountedRef.current) {
-          return
-        }
-
-        console.error('Fallback request also failed:', fallbackError)
-        onError(
-          fallbackError instanceof Error
-            ? fallbackError
-            : new Error('Unknown fallback error')
-        )
-      }
-    },
-    [projectChat, ns, proj]
-  )
+  // Non-streaming fallback removed
 
   // Add message to both streaming state and project session
-  const addMessage = useCallback(
-    (message: Omit<ChatboxMessage, 'id'>) => {
-      const newMessage: ChatboxMessage = {
-        ...message,
-        id: generateMessageId(),
-      }
+  // Legacy addMessage helper removed; we now add directly via projectSession
 
-      // Check if this is a placeholder message that should skip project session in persistent mode
-      const isThinkingPlaceholder =
-        message.content === 'Thinking...' && message.type === 'assistant'
-      const shouldSkipProjectSession =
-        isThinkingPlaceholder && !projectSession.isTemporaryMode
-
-      if (!shouldSkipProjectSession) {
-        // Add to project session system - it will create temporary session if needed
-        try {
-          projectSession.addMessage(
-            message.content,
-            message.type === 'user' ? 'user' : 'assistant'
-          )
-        } catch (err) {
-          console.error('Failed to add message to project session:', err)
-          // Don't fail silently - this is a critical error
-          throw err
-        }
-      }
-
-      return newMessage.id
-    },
-    [projectSession]
-  )
-
-  // Update message helper (for streaming updates before final save to project session)
-  const [streamingMessages, setStreamingMessages] = useState<ChatboxMessage[]>(
-    []
-  )
-  const updateMessage = useCallback(
-    (id: string, updates: Partial<ChatboxMessage>) => {
-      // For project session system, we maintain temporary streaming messages
-      // These are later replaced when final message is saved to project session
-      setStreamingMessages(prev => {
-        const existing = prev.find(msg => msg.id === id)
-        if (existing) {
-          return prev.map(msg => (msg.id === id ? { ...msg, ...updates } : msg))
-        } else {
-          // Add new streaming message
-          return [
-            ...prev,
-            {
-              id,
-              type: 'assistant',
-              content: '',
-              timestamp: new Date(),
-              ...updates,
-            } as ChatboxMessage,
-          ]
-        }
-      })
-    },
-    []
+  // Simplified streaming state: single temporary assistant message
+  const [tempAssistant, setTempAssistant] = useState<ChatboxMessage | null>(
+    null
   )
 
   // Combine project session messages with temporary streaming messages
   const currentMessages = useMemo(() => {
-    const combined = [...projectSessionMessages, ...streamingMessages]
-
-    // Filter out "Thinking..." placeholder messages for UI display
-    return combined.filter(msg => {
-      const isThinkingPlaceholder =
-        msg.type === 'assistant' &&
-        msg.content === 'Thinking...' &&
-        !msg.isStreaming &&
-        !msg.isLoading
-      return !isThinkingPlaceholder
-    })
-  }, [projectSessionMessages, streamingMessages])
+    return tempAssistant
+      ? [...projectSessionMessages, tempAssistant]
+      : [...projectSessionMessages]
+  }, [projectSessionMessages, tempAssistant])
 
   // Handle sending message with streaming or non-streaming API integration
   const sendMessage = useCallback(
@@ -258,31 +125,19 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
       // Clear any previous errors
       setError(null)
 
-      // Add user message immediately (optimistic update)
-      addMessage({
-        type: 'user',
-        content: messageContent,
-        timestamp: new Date(),
-      })
+      // Add user message to project session
+      projectSession.addMessage(messageContent, 'user')
 
-      // Add loading/streaming assistant message
-      const assistantMessageId = addMessage({
+      // Create a temporary assistant message for streaming display
+      const assistantMessageId = generateMessageId()
+      setTempAssistant({
+        id: assistantMessageId,
         type: 'assistant',
-        content: 'Thinking...',
+        content: '',
         timestamp: new Date(),
-        isLoading: !streamingEnabled,
-        isStreaming: streamingEnabled,
+        isStreaming: true,
+        isLoading: false,
       })
-
-      // Ensure a visible temporary streaming bubble exists immediately so the
-      // UI can show the typing indicator before the first chunk arrives.
-      if (streamingEnabled) {
-        updateMessage(assistantMessageId, {
-          content: '',
-          isStreaming: true,
-          isLoading: false,
-        })
-      }
 
       let timeoutId: NodeJS.Timeout | undefined
 
@@ -290,311 +145,109 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         // Create chat request
         const chatRequest = createChatRequest(messageContent)
 
-        if (streamingEnabled) {
-          // Streaming path
-          setIsStreaming(true)
+        // Streaming path only
+        setIsStreaming(true)
 
-          // Create abort controller for this request
-          const abortController = new AbortController()
-          streamingAbortControllerRef.current = abortController
+        // Create abort controller for this request
+        const abortController = new AbortController()
+        streamingAbortControllerRef.current = abortController
 
-          // Set a timeout for streaming requests
-          timeoutId = setTimeout(() => {
-            console.log('Streaming request timed out after 1 minute')
-            abortController.abort()
-          }, 60000)
+        // Set a timeout for streaming requests
+        timeoutId = setTimeout(() => {
+          console.log('Streaming request timed out after 1 minute')
+          abortController.abort()
+        }, 60000)
 
-          let accumulatedContent = ''
-          await chatProjectStreaming(
-            ns,
-            proj,
-            chatRequest,
-            fixedSessionId || undefined,
-            {
-              onChunk: (chunk: ChatStreamChunk) => {
-                // Handle role assignment (first chunk)
-                if (chunk.choices?.[0]?.delta?.role && !accumulatedContent) {
-                  return
-                }
-
-                // Handle content chunks
-                if (chunk.choices?.[0]?.delta?.content) {
-                  accumulatedContent += chunk.choices[0].delta.content
-                  updateMessage(assistantMessageId, {
-                    content: accumulatedContent,
-                    isStreaming: true,
-                  })
-                }
-              },
-              onError: (error: Error) => {
-                console.error('Streaming error:', error)
-                clearTimeout(timeoutId)
-                setIsStreaming(false)
-
-                // Determine cancellation vs other errors
-                const isAbortError =
-                  error instanceof Error && error.name === 'AbortError'
-                const isWrappedCancel =
-                  error instanceof NetworkError &&
-                  (error.message.toLowerCase().includes('cancelled') ||
-                    error.message.toLowerCase().includes('canceled') ||
-                    error.message.toLowerCase().includes('aborted'))
-                const isUserCancelled =
-                  isAbortError ||
-                  (error as any)?.code === 'USER_CANCELLED' ||
-                  (error as any)?.name === 'UserCancelledError' ||
-                  isWrappedCancel
-
-                if (!isUserCancelled && error instanceof NetworkError) {
-                  // Clear any existing fallback timeout
-                  if (fallbackTimeoutRef.current) {
-                    clearTimeout(fallbackTimeoutRef.current)
-                  }
-
-                  // Set up tracked fallback timeout
-                  fallbackTimeoutRef.current = setTimeout(() => {
-                    fallbackTimeoutRef.current = null
-
-                    executeFallbackRequest(
-                      messageContent,
-                      currentSessionId || '',
-                      response => {
-                        // Add the response as a new message
-                        if (
-                          response.data.choices &&
-                          response.data.choices.length > 0
-                        ) {
-                          const assistantResponse =
-                            response.data.choices[0].message.content
-
-                          // Skip empty responses
-                          if (
-                            !assistantResponse ||
-                            assistantResponse.trim() === ''
-                          ) {
-                            addMessage({
-                              type: 'assistant',
-                              content:
-                                "Sorry, I didn't receive a proper response.",
-                              timestamp: new Date(),
-                            })
-                          } else {
-                            addMessage({
-                              type: 'assistant',
-                              content: assistantResponse,
-                              timestamp: new Date(),
-                            })
-                          }
-                        } else {
-                          addMessage({
-                            type: 'assistant',
-                            content:
-                              "Sorry, I didn't receive a proper response.",
-                            timestamp: new Date(),
-                          })
-                        }
-                      },
-                      fallbackError => {
-                        const errorMessage =
-                          fallbackError instanceof Error
-                            ? fallbackError.message
-                            : 'Failed to get response'
-                        setError(errorMessage)
-                        addMessage({
-                          type: 'error',
-                          content: `Error: ${errorMessage}`,
-                          timestamp: new Date(),
-                        })
-                      }
-                    )
-                  }, 100)
-                } else {
-                  // For user cancellations: keep partial text, mark cancelled; suppress toast
-                  if (isUserCancelled) {
-                    setError(null)
-                    setStreamingMessages(prev =>
-                      prev.map(m =>
-                        m.id === assistantMessageId
-                          ? { ...m, isStreaming: false, cancelled: true }
-                          : m
-                      )
-                    )
-                    addMessage({
-                      type: 'system',
-                      content: 'Request canceled',
-                      timestamp: new Date(),
-                    })
-                  } else {
-                    // Other errors: show a single error line, no toast
-                    const errorMessage =
-                      error instanceof NetworkError
-                        ? error.message
-                        : 'Streaming connection failed'
-                    setError(null)
-                    addMessage({
-                      type: 'error',
-                      content: `Error: ${errorMessage}`,
-                      timestamp: new Date(),
-                    })
-                  }
-                }
-              },
-              onComplete: () => {
-                clearTimeout(timeoutId)
-                setIsStreaming(false)
-
-                // If we got content, finalize the message
-                if (accumulatedContent && accumulatedContent.trim()) {
-                  // Save final message to project session and remove temporary streaming message
-                  try {
-                    // Add final response to project session (will go to temp messages since streaming happens before session transfer)
-                    projectSession.addMessage(accumulatedContent, 'assistant')
-
-                    // Remove the temporary streaming message
-                    setStreamingMessages(prev =>
-                      prev.filter(msg => msg.id !== assistantMessageId)
-                    )
-
-                    // NOW handle session creation/reconciliation after all messages are added
-                    // Use a small delay to ensure the addMessage state update has completed
-                    // With fixed session IDs, no reconciliation is required
-                    setTimeout(() => {}, 10)
-                  } catch (err) {
-                    console.warn('Failed to save to project session:', err)
-                    // Keep the message in streaming state with final content
-                    updateMessage(assistantMessageId, {
-                      content: accumulatedContent,
-                      isStreaming: false,
-                      isLoading: false,
-                    })
-                  }
-                } else {
-                  // No content received, try non-streaming fallback
-                  setStreamingMessages(prev =>
-                    prev.filter(msg => msg.id !== assistantMessageId)
-                  )
-
-                  // No-op for fixed session IDs
-
-                  // Clear any existing fallback timeout
-                  if (fallbackTimeoutRef.current) {
-                    clearTimeout(fallbackTimeoutRef.current)
-                  }
-
-                  // Set up tracked fallback timeout
-                  fallbackTimeoutRef.current = setTimeout(() => {
-                    fallbackTimeoutRef.current = null
-
-                    executeFallbackRequest(
-                      messageContent,
-                      currentSessionId || '',
-                      response => {
-                        // Add the response as a new message
-                        if (
-                          response.data.choices &&
-                          response.data.choices.length > 0
-                        ) {
-                          const assistantResponse =
-                            response.data.choices[0].message.content
-
-                          // Skip empty responses
-                          if (
-                            !assistantResponse ||
-                            assistantResponse.trim() === ''
-                          ) {
-                            addMessage({
-                              type: 'assistant',
-                              content:
-                                "Sorry, I didn't receive a proper response.",
-                              timestamp: new Date(),
-                            })
-                          } else {
-                            addMessage({
-                              type: 'assistant',
-                              content: assistantResponse,
-                              timestamp: new Date(),
-                            })
-                          }
-                        } else {
-                          addMessage({
-                            type: 'assistant',
-                            content:
-                              "Sorry, I didn't receive a proper response.",
-                            timestamp: new Date(),
-                          })
-                        }
-                      },
-                      fallbackError => {
-                        console.error(
-                          'Fallback request also failed:',
-                          fallbackError
-                        )
-                        addMessage({
-                          type: 'error',
-                          content: 'Error: Failed to get response',
-                          timestamp: new Date(),
-                        })
-                      }
-                    )
-                  }, 100)
-                }
-              },
-              signal: abortController.signal,
-            }
-          )
-
-          // With fixed session IDs, no reconciliation needed
-
-          // For streaming, we return true immediately as the request is initiated
-          // The actual success/failure will be handled by the streaming callbacks
-          return true
-        } else {
-          // Non-streaming path
-          if (!ns || !proj) {
-            setError('Select or create a project before chatting.')
-            return false
-          }
-          const response = await (projectChat as any).mutateAsync({
-            chatRequest,
-            sessionId: fixedSessionId || undefined,
-          })
-
-          // With fixed session IDs, ignore response.sessionId
-
-          // Update assistant message with response
-          if (response.data.choices && response.data.choices.length > 0) {
-            const assistantResponse = response.data.choices[0].message.content
-
-            // Skip empty responses
-            if (!assistantResponse || assistantResponse.trim() === '') {
-              updateMessage(assistantMessageId, {
-                content: "Sorry, I didn't receive a proper response.",
-                isLoading: false,
-              })
-            } else {
-              // Save final message to project session and remove temporary one
-              try {
-                projectSession.addMessage(assistantResponse, 'assistant')
-                setStreamingMessages(prev =>
-                  prev.filter(msg => msg.id !== assistantMessageId)
-                )
-              } catch (err) {
-                console.warn('Failed to save to project session:', err)
-                updateMessage(assistantMessageId, {
-                  content: assistantResponse,
-                  isLoading: false,
-                })
+        let accumulatedContent = ''
+        await chatProjectStreaming(
+          ns,
+          proj,
+          chatRequest,
+          projectSession.sessionId || undefined,
+          {
+            onChunk: (chunk: ChatStreamChunk) => {
+              // Handle role assignment (first chunk)
+              if (chunk.choices?.[0]?.delta?.role && !accumulatedContent) {
+                return
               }
-            }
-          } else {
-            updateMessage(assistantMessageId, {
-              content: "Sorry, I didn't receive a proper response.",
-              isLoading: false,
-            })
-          }
 
-          return true
-        }
+              // Handle content chunks
+              if (chunk.choices?.[0]?.delta?.content) {
+                accumulatedContent += chunk.choices[0].delta.content
+                setTempAssistant(prev =>
+                  prev && prev.id === assistantMessageId
+                    ? {
+                        ...prev,
+                        content: accumulatedContent,
+                        isStreaming: true,
+                      }
+                    : prev
+                )
+              }
+            },
+            onError: (error: Error) => {
+              console.error('Streaming error:', error)
+              clearTimeout(timeoutId)
+              setIsStreaming(false)
+
+              // Determine cancellation vs other errors
+              const isAbortError =
+                error instanceof Error && error.name === 'AbortError'
+              const isWrappedCancel =
+                error instanceof NetworkError &&
+                (error.message.toLowerCase().includes('cancelled') ||
+                  error.message.toLowerCase().includes('canceled') ||
+                  error.message.toLowerCase().includes('aborted'))
+              const isUserCancelled =
+                isAbortError ||
+                (error as any)?.code === 'USER_CANCELLED' ||
+                (error as any)?.name === 'UserCancelledError' ||
+                isWrappedCancel
+
+              if (!isUserCancelled && error instanceof NetworkError) {
+                // Show a single error banner; do not add error lines to chat
+                setError(error.message)
+              } else {
+                // For user cancellations: keep partial text, mark cancelled; suppress toast
+                if (isUserCancelled) {
+                  setError(null)
+                  setTempAssistant(prev =>
+                    prev && prev.id === assistantMessageId
+                      ? { ...prev, isStreaming: false, cancelled: true }
+                      : prev
+                  )
+                } else {
+                  // Other errors: show a single error line, no toast
+                  const errorMessage =
+                    error instanceof NetworkError
+                      ? error.message
+                      : 'Streaming connection failed'
+                  setError(null)
+                  setError(errorMessage)
+                }
+              }
+            },
+            onComplete: () => {
+              clearTimeout(timeoutId)
+              setIsStreaming(false)
+
+              // If we got content, finalize the message
+              if (accumulatedContent && accumulatedContent.trim()) {
+                // Save final message to project session and clear temp assistant
+                try {
+                  projectSession.addMessage(accumulatedContent, 'assistant')
+                } catch (err) {
+                  console.warn('Failed to save to project session:', err)
+                }
+              }
+              setTempAssistant(null)
+            },
+            signal: abortController.signal,
+          }
+        )
+        // For streaming, we return true immediately as the request is initiated
+        // The actual success/failure will be handled by the streaming callbacks
+        return true
       } catch (error) {
         console.error('Chat error:', error)
         setIsStreaming(false)
@@ -614,20 +267,16 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
           isWrappedCancel
         if (isUserCancelled) {
           setError(null)
-          setStreamingMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMessageId
-                ? { ...m, isStreaming: false, cancelled: true }
-                : m
-            )
+          setTempAssistant(prev =>
+            prev && prev.id === assistantMessageId
+              ? { ...prev, isStreaming: false, cancelled: true }
+              : prev
           )
           return false
         }
 
-        // For other errors, remove the temporary streaming message
-        setStreamingMessages(prev =>
-          prev.filter(msg => msg.id !== assistantMessageId)
-        )
+        // For other errors, clear the temporary streaming message
+        setTempAssistant(null)
 
         // Set error message
         const errorMessage =
@@ -635,13 +284,6 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
             ? error.message
             : 'An unexpected error occurred'
         setError(errorMessage)
-
-        // Add error message to chat
-        addMessage({
-          type: 'error',
-          content: `Error: ${errorMessage}`,
-          timestamp: new Date(),
-        })
 
         return false
       } finally {
@@ -652,16 +294,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
         }
       }
     },
-    [
-      projectChat,
-      currentSessionId,
-      addMessage,
-      updateMessage,
-      streamingEnabled,
-      isStreaming,
-      projectSession,
-      executeFallbackRequest,
-    ]
+    [projectChat, streamingEnabled, isStreaming, projectSession, tempAssistant]
   )
 
   // Handle clear chat
@@ -683,7 +316,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
       // Use project session system
       projectSession.clearHistory()
       // Also clear any temporary streaming messages
-      setStreamingMessages([])
+      setTempAssistant(null)
       setError(null)
       return true
     } catch (error) {
@@ -712,12 +345,8 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
       setIsStreaming(false)
 
       // Update any streaming messages to show they were cancelled
-      setStreamingMessages(prev =>
-        prev.map(msg =>
-          msg.isStreaming
-            ? { ...msg, isStreaming: false, cancelled: true }
-            : msg
-        )
+      setTempAssistant(prev =>
+        prev ? { ...prev, isStreaming: false, cancelled: true } : prev
       )
       // onError will append the single system line; suppress toast
       setError(null)
@@ -732,7 +361,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     }
 
     // Clear current session - new one will be created on first message
-    setStreamingMessages([])
+    setTempAssistant(null)
     setError(null)
     setInputValue('')
 
@@ -742,7 +371,7 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
 
   const result = {
     // State
-    sessionId: currentSessionId,
+    sessionId: projectSession.sessionId,
     messages: currentMessages,
     inputValue,
     error: error || projectSession.error,
@@ -760,8 +389,6 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     clearError,
     resetSession,
     cancelStreaming,
-    addMessage,
-    updateMessage,
     // Session utilities for UI
     listSessions: projectSession.listSessions,
     selectSession: projectSession.selectSession,

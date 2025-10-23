@@ -213,6 +213,14 @@ export function useProjectChat(namespace: string, project: string) {
   })
 }
 
+// Export a stable alias for the mutation type used by designer chat hook
+export type ProjectChatMutation = UseMutationResult<
+  { data: ChatResponse; sessionId: string },
+  Error,
+  { chatRequest: ChatRequest; sessionId?: string },
+  { sessionId?: string }
+>
+
 /**
  * Project-scoped delete session mutation
  */
