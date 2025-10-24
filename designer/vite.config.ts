@@ -31,7 +31,6 @@ export default defineConfig({
             '@codemirror/commands',
             '@codemirror/lang-json',
             '@codemirror/lang-yaml',
-            '@codemirror/lint',
             '@codemirror/search',
             '@codemirror/theme-one-dark',
             '@lezer/highlight',
