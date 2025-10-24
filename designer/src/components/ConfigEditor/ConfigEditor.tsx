@@ -3,6 +3,7 @@ import { useActiveProject } from '../../hooks/useActiveProject'
 import { useFormattedConfig } from '../../hooks/useFormattedConfig'
 import { useUpdateProject } from '../../hooks/useProjects'
 import { useTheme } from '../../contexts/ThemeContext'
+import { validateYAML } from '../../utils/yamlSchemaValidator'
 import yaml from 'yaml'
 import ConfigLoading from './ConfigLoading'
 import ConfigError from './ConfigError'
@@ -54,8 +55,30 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
     if (!activeProject || !isDirty) return
 
     try {
-      // Parse YAML to config object
-      const configObj = yaml.parse(editedContent)
+      // Parse YAML first to check for syntax errors
+      let configObj
+      try {
+        configObj = yaml.parse(editedContent)
+      } catch (parseError) {
+        alert(`YAML syntax error:\n\n${parseError instanceof Error ? parseError.message : 'Invalid YAML syntax'}\n\nPlease fix the syntax before saving.`)
+        return
+      }
+
+      // Validate against schema
+      const validationErrors = await validateYAML(editedContent)
+
+      if (validationErrors.length > 0) {
+        // Show validation errors with line numbers
+        const errorMessages = validationErrors
+          .slice(0, 10)
+          .map((e) => `  Line ${e.line}, Col ${e.column}: ${e.message}`)
+          .join('\n')
+
+        const moreErrors = validationErrors.length > 10 ? `\n  ... and ${validationErrors.length - 10} more errors` : ''
+
+        alert(`Configuration has ${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}:\n\n${errorMessages}${moreErrors}\n\nPlease fix these errors before saving.`)
+        return
+      }
 
       // Update project via API
       await updateProject.mutateAsync({
@@ -70,9 +93,42 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
       await refetch()
 
       setIsDirty(false)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save config:', err)
-      // TODO: Show error toast/notification
+
+      // Parse backend validation errors
+      let errorMessage = 'Failed to save configuration'
+
+      if (err.response?.data) {
+        const data = err.response.data
+
+        // Handle backend validation errors
+        if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            // Pydantic validation errors
+            const backendErrors = data.detail
+              .slice(0, 10)
+              .map((e: any) => {
+                const location = e.loc ? e.loc.join('.') : 'unknown'
+                return `  ${location}: ${e.msg || e.message || 'validation error'}`
+              })
+              .join('\n')
+
+            const moreErrors = data.detail.length > 10 ? `\n  ... and ${data.detail.length - 10} more errors` : ''
+            errorMessage = `Backend validation errors:\n\n${backendErrors}${moreErrors}`
+          } else if (typeof data.detail === 'string') {
+            errorMessage = `Backend error: ${data.detail}`
+          } else {
+            errorMessage = `Backend error: ${JSON.stringify(data.detail)}`
+          }
+        } else if (data.message) {
+          errorMessage = data.message
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+
+      alert(errorMessage)
     }
   }
 

@@ -54,6 +54,8 @@ const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
     highlightSelectionMatches,
     tags,
     oneDark,
+    linter: null as any, // Not used due to compatibility issues
+    lintGutter: null as any, // Not used due to compatibility issues
   }
 }
 
@@ -144,6 +146,14 @@ export function useCodeMirror(
       extensions.push(json())
     } else if (defaultConfig.language === 'yaml') {
       extensions.push(yaml())
+
+      // Real-time linting disabled due to CodeMirror module compatibility issues
+      // Validation happens on save instead (see ConfigEditor component)
+      // The linter extension causes: "Unrecognized extension value in extension set"
+      // This is a known issue with dynamic module loading in CodeMirror
+      //
+      // Alternative: Users will see validation errors when they click Save
+      // which prevents saving invalid configs
     }
 
     // Basic editing

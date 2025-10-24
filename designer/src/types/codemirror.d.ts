@@ -23,6 +23,8 @@ export interface CodeMirrorModules {
   highlightSelectionMatches: any // Extension function
   tags: typeof tags
   oneDark: any // Dark theme extension
+  linter: any // Linting function
+  lintGutter: any // Lint gutter extension
 }
 
 /**
