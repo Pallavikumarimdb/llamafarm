@@ -5,7 +5,9 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 import celery.result
 from config.datamodel import LlamaFarmConfig, Model  # noqa: E402
@@ -35,7 +37,9 @@ from services.project_service import ProjectService
 class Project(BaseModel):
     namespace: str = Field(..., description="The namespace of the project")
     name: str = Field(..., description="The name of the project")
-    config: LlamaFarmConfig = Field(..., description="The configuration of the project")
+    config: Union[LlamaFarmConfig, dict] = Field(..., description="The configuration of the project")
+    validation_error: str | None = Field(None, description="Validation error message if config has issues")
+    last_modified: datetime | None = Field(None, description="Last modified timestamp of the project config")
 
 
 class ListProjectsResponse(BaseModel):
@@ -117,6 +121,8 @@ async def list_projects(
                 namespace=namespace,
                 name=project.name,
                 config=project.config,
+                validation_error=project.validation_error,
+                last_modified=project.last_modified,
             )
             for project in projects
         ],
@@ -161,6 +167,8 @@ async def get_project(namespace: str, project_id: str):
             namespace=project.namespace,
             name=project.name,
             config=project.config,
+            validation_error=getattr(project, 'validation_error', None),
+            last_modified=getattr(project, 'last_modified', None),
         ),
     )
 

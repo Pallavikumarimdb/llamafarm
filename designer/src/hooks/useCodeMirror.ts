@@ -13,6 +13,7 @@ const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
     { EditorView, lineNumbers, keymap },
     { EditorState, StateEffect },
     { json },
+    { yaml },
     { defaultKeymap },
     {
       bracketMatching,
@@ -28,6 +29,7 @@ const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
     import('@codemirror/view'),
     import('@codemirror/state'),
     import('@codemirror/lang-json'),
+    import('@codemirror/lang-yaml'),
     import('@codemirror/commands'),
     import('@codemirror/language'),
     import('@codemirror/search'),
@@ -42,6 +44,7 @@ const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
     EditorState,
     StateEffect,
     json,
+    yaml,
     defaultKeymap,
     bracketMatching,
     indentOnInput,
@@ -80,6 +83,7 @@ export function useCodeMirror(
     language: 'json',
     tabSize: 2,
     indentUnit: 2,
+    onChange: config.onChange,
     ...config,
   }
 
@@ -123,6 +127,7 @@ export function useCodeMirror(
       HighlightStyle,
       highlightSelectionMatches,
       json,
+      yaml,
       keymap,
       defaultKeymap,
       tags,
@@ -137,6 +142,8 @@ export function useCodeMirror(
     // Language support
     if (defaultConfig.language === 'json') {
       extensions.push(json())
+    } else if (defaultConfig.language === 'yaml') {
+      extensions.push(yaml())
     }
 
     // Basic editing
@@ -209,6 +216,17 @@ export function useCodeMirror(
     ])
 
     extensions.push(syntaxHighlighting(customHighlightStyle))
+
+    // Add onChange listener if provided
+    if (defaultConfig.onChange && !defaultConfig.readOnly) {
+      const updateListener = modules.EditorView.updateListener.of((update: any) => {
+        if (update.docChanged) {
+          const newContent = update.state.doc.toString()
+          defaultConfig.onChange!(newContent)
+        }
+      })
+      extensions.push(updateListener)
+    }
 
     // Custom styling extension with proper theme backgrounds
     extensions.push(

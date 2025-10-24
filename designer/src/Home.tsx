@@ -32,6 +32,7 @@ function Home() {
   )
 
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'a-z' | 'z-a' | 'model'>('newest')
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0)
   const [fakeProgress, setFakeProgress] = useState(0)
@@ -53,17 +54,114 @@ function Home() {
     [projectsResponse]
   )
 
+  // Get full project objects from API
+  const fullProjects = useMemo(() => {
+    const apiProjects = projectsResponse?.projects || []
+    // Map by name for quick lookup
+    const projectMap = new Map(apiProjects.map(p => [p.name, p]))
+    return projectMap
+  }, [projectsResponse])
+
+  // Helper to extract all model names from config
+  const getModelNames = (config: any): string[] => {
+    const modelNames: string[] = []
+
+    // Try multi-model format first
+    if (config?.runtime?.models) {
+      const models = Array.isArray(config.runtime.models)
+        ? config.runtime.models
+        : Object.values(config.runtime.models)
+
+      for (const modelConfig of models) {
+        if (modelConfig?.model) {
+          modelNames.push(modelConfig.model)
+        }
+      }
+    }
+
+    // Try legacy single-model format
+    if (modelNames.length === 0 && config?.runtime?.model) {
+      modelNames.push(config.runtime.model)
+    }
+
+    // Return unique model names
+    return [...new Set(modelNames)]
+  }
+
+  // Helper to format last modified date
+  const formatLastModified = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'Never'
+
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+      if (diffDays === 0) {
+        return 'Today'
+      } else if (diffDays === 1) {
+        return 'Yesterday'
+      } else if (diffDays < 7) {
+        return `${diffDays} days ago`
+      } else if (diffDays < 30) {
+        const weeks = Math.floor(diffDays / 7)
+        return `${weeks} week${weeks > 1 ? 's' : ''} ago`
+      } else {
+        // Show actual date for older items
+        return date.toLocaleDateString()
+      }
+    } catch {
+      return 'Unknown'
+    }
+  }
+
   // Shared modal hook
   const projectModal = useProjectModalContext()
 
   // create-form scroll handler no longer used (buttons removed)
 
-  const filteredProjectNames = useMemo(() => {
-    return filterProjectsBySearch(
+  const filteredAndSortedProjectNames = useMemo(() => {
+    // First, filter by search
+    const filtered = filterProjectsBySearch(
       projectsList.map(name => ({ name })),
       search
     ).map(item => item.name)
-  }, [projectsList, search])
+
+    // Then sort based on sortBy selection
+    const sorted = [...filtered].sort((a, b) => {
+      const projectA = fullProjects.get(a)
+      const projectB = fullProjects.get(b)
+
+      switch (sortBy) {
+        case 'newest': {
+          const dateA = projectA?.last_modified ? new Date(projectA.last_modified).getTime() : 0
+          const dateB = projectB?.last_modified ? new Date(projectB.last_modified).getTime() : 0
+          return dateB - dateA // Newest first
+        }
+        case 'oldest': {
+          const dateA = projectA?.last_modified ? new Date(projectA.last_modified).getTime() : 0
+          const dateB = projectB?.last_modified ? new Date(projectB.last_modified).getTime() : 0
+          return dateA - dateB // Oldest first
+        }
+        case 'a-z':
+          return a.localeCompare(b)
+        case 'z-a':
+          return b.localeCompare(a)
+        case 'model': {
+          const modelsA = projectA ? getModelNames(projectA.config) : []
+          const modelsB = projectB ? getModelNames(projectB.config) : []
+          const modelA = modelsA[0] || 'zzz' // Sort projects without models to end
+          const modelB = modelsB[0] || 'zzz'
+          return modelA.localeCompare(modelB)
+        }
+        default:
+          return 0
+      }
+    })
+
+    return sorted
+  }, [projectsList, search, sortBy, fullProjects])
 
   // No-op: pills removed
 
@@ -521,57 +619,109 @@ function Home() {
           {/* New project button removed per design */}
         </div>
 
-        {/* Search */}
-        <div className="mb-4 w-full flex items-center bg-card rounded-lg px-3 py-2 border border-input">
-          <FontIcon type="search" className="w-4 h-4 text-foreground" />
-          <input
-            className="w-full bg-transparent border-none focus:outline-none px-2 text-sm text-foreground"
-            placeholder="Search projects"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {/* Search and Sort */}
+        <div className="mb-4 flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 flex items-center bg-card rounded-lg px-3 py-2 border border-input">
+            <FontIcon type="search" className="w-4 h-4 text-foreground" />
+            <input
+              className="w-full bg-transparent border-none focus:outline-none px-2 text-sm text-foreground"
+              placeholder="Search projects"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="px-3 py-2 rounded-lg border border-input bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as any)}
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="a-z">A-Z</option>
+            <option value="z-a">Z-A</option>
+            <option value="model">By Model</option>
+          </select>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-8">
-          {filteredProjectNames.map(name => (
-            <div
-              key={name}
-              className="group w-full rounded-lg p-4 bg-card border border-border cursor-pointer flex flex-col"
-              onClick={() => openProject(name)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex flex-col flex-1 min-w-0">
-                  <div className="text-base text-foreground line-clamp-2 break-words">
-                    {name}
+          {filteredAndSortedProjectNames.map(name => {
+            const project = fullProjects.get(name)
+            const modelNames = project ? getModelNames(project.config) : []
+            const hasValidationError = project?.validation_error
+
+            // Show first 2 models, then "+N" for additional
+            const visibleModels = modelNames.slice(0, 2)
+            const additionalCount = modelNames.length - 2
+
+            return (
+              <div
+                key={name}
+                className="group w-full rounded-lg p-4 bg-card border border-border cursor-pointer flex flex-col"
+                onClick={() => openProject(name)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <div className="text-base text-foreground line-clamp-2 break-words">
+                      {name}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {visibleModels.length > 0 ? (
+                        <>
+                          {visibleModels.map((model, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs text-primary-foreground bg-primary rounded-xl px-3 py-0.5"
+                            >
+                              {model}
+                            </span>
+                          ))}
+                          {additionalCount > 0 && (
+                            <span
+                              className="text-xs text-primary-foreground bg-primary/70 rounded-xl px-3 py-0.5"
+                              title={modelNames.slice(2).join(', ')}
+                            >
+                              +{additionalCount}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-foreground/60 bg-muted rounded-xl px-3 py-0.5">
+                          No model
+                        </span>
+                      )}
+                      {hasValidationError && (
+                        <span
+                          className="text-xs text-red-100 bg-red-600 rounded-xl px-3 py-0.5"
+                          title={hasValidationError}
+                        >
+                          Validation Error
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-foreground/60 mt-2">
+                      {formatLastModified(project?.last_modified)}
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    <span className="text-xs text-primary-foreground bg-primary rounded-xl px-3 py-0.5">
-                      TinyLama
-                    </span>
-                  </div>
-                  <div className="text-xs text-foreground/60 mt-2">
-                    Last edited on N/A
-                  </div>
+                  <FontIcon
+                    type="arrow-right"
+                    className="w-5 h-5 text-primary shrink-0 ml-2"
+                  />
                 </div>
-                <FontIcon
-                  type="arrow-right"
-                  className="w-5 h-5 text-primary shrink-0 ml-2"
-                />
+                <div className="mt-auto pt-4 flex justify-end">
+                  <button
+                    className="flex items-center gap-1 text-primary hover:opacity-80"
+                    onClick={e => {
+                      e.stopPropagation()
+                      projectModal.openEditModal(name)
+                    }}
+                  >
+                    <FontIcon type="edit" className="w-5 h-5 text-primary" />
+                    <span className="text-sm">Edit</span>
+                  </button>
+                </div>
               </div>
-              <div className="mt-auto pt-4 flex justify-end">
-                <button
-                  className="flex items-center gap-1 text-primary hover:opacity-80"
-                  onClick={e => {
-                    e.stopPropagation()
-                    projectModal.openEditModal(name)
-                  }}
-                >
-                  <FontIcon type="edit" className="w-5 h-5 text-primary" />
-                  <span className="text-sm">Edit</span>
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

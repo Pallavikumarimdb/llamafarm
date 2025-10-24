@@ -40,6 +40,29 @@ export const getProjectsList = (apiResponse?: {
 }
 
 /**
+ * Extract model name from project config
+ * @param config - Project configuration object
+ * @returns Model name or 'Unknown'
+ */
+function extractModelName(config: Record<string, any>): string {
+  // Try multi-model format first (runtime.models with default_model)
+  if (config?.runtime?.models && config?.runtime?.default_model) {
+    const defaultModel = config.runtime.default_model
+    const modelConfig = config.runtime.models[defaultModel]
+    if (modelConfig?.model) {
+      return modelConfig.model
+    }
+  }
+
+  // Try legacy single-model format (runtime.model)
+  if (config?.runtime?.model) {
+    return config.runtime.model
+  }
+
+  return 'Unknown'
+}
+
+/**
  * Convert API projects to UI ProjectItem format
  * @param apiResponse - The API response containing projects
  * @returns Array of ProjectItem objects for UI display
@@ -55,9 +78,10 @@ export const getProjectsForUI = (apiResponse?: { projects?: Project[] }) => {
     const itemsFromApi = api.map((project, idx) => ({
       id: idx + 1,
       name: project.name,
-      model: 'TinyLama',
-      lastEdited: '8/15/2025',
+      model: extractModelName(project.config),
+      lastEdited: 'N/A',
       description: project.config?.description || '',
+      validationError: project.validation_error,
     }))
     const startIndex = itemsFromApi.length
     const itemsFromCustom = custom
@@ -65,8 +89,8 @@ export const getProjectsForUI = (apiResponse?: { projects?: Project[] }) => {
       .map((name, idx) => ({
         id: startIndex + idx + 1,
         name,
-        model: 'TinyLama',
-        lastEdited: '8/15/2025',
+        model: 'Unknown',
+        lastEdited: 'N/A',
         description: '',
       }))
     return [...itemsFromApi, ...itemsFromCustom]

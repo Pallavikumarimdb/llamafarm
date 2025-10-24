@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useProject } from './useProjects'
 import { useActiveProject } from './useActiveProject'
+import yaml from 'yaml'
 import type { UseFormattedConfigReturn } from '../types/config'
 
 /**
@@ -28,7 +29,7 @@ export function useFormattedConfig(): UseFormattedConfigReturn {
     if (error) {
       return `# Error loading project configuration
 # Error: ${error instanceof Error ? error.message : 'Unknown error'}
-# 
+#
 # Please check:
 # - Project exists and is accessible
 # - Network connection
@@ -36,12 +37,10 @@ export function useFormattedConfig(): UseFormattedConfigReturn {
 #
 # You can try refreshing to reload the configuration.
 
-{
-  "error": {
-    "message": "${error instanceof Error ? error.message : 'Unknown error'}",
-    "timestamp": "${new Date().toISOString()}"
-  }
-}`
+error:
+  message: "${error instanceof Error ? error.message : 'Unknown error'}"
+  timestamp: "${new Date().toISOString()}"
+`
     }
 
     if (!projectResponse || !activeProject) {
@@ -54,24 +53,20 @@ export function useFormattedConfig(): UseFormattedConfigReturn {
 #
 # Try selecting a project from the sidebar or creating a new one.
 
-{
-  "message": "No project configuration available",
-  "activeProject": ${activeProject ? `"${activeProject.project}"` : 'null'}
-}`
+message: "No project configuration available"
+activeProject: ${activeProject ? `"${activeProject.project}"` : 'null'}
+`
     }
 
-    // Return formatted JSON without hardcoded lastUpdated
-    // Note: Timestamps not included as they're not available from the API
-    const configData = {
-      project: activeProject.project,
-      namespace: activeProject.namespace,
-      config: projectResponse.project?.config || {},
-      metadata: {
-        source: "llamafarm-designer"
-      }
-    }
+    // Return the config as YAML
+    // This is the actual project configuration that can be edited
+    const config = projectResponse.project?.config || {}
 
-    return JSON.stringify(configData, null, 2)
+    return yaml.stringify(config, {
+      indent: 2,
+      lineWidth: 0, // Don't wrap lines
+      minContentWidth: 0
+    })
   }, [error, projectResponse, activeProject])
 
   return {

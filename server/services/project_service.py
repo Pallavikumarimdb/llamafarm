@@ -1,7 +1,9 @@
 import os
+from datetime import datetime
 from pathlib import Path
+from typing import Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from api.errors import (
     ConfigTemplateNotFoundError,
@@ -17,6 +19,7 @@ from config import (  # noqa: E402
     ConfigError,
     generate_base_config,
     load_config,
+    load_config_dict,
     save_config,
 )
 from config.datamodel import LlamaFarmConfig  # noqa: E402
@@ -29,7 +32,9 @@ RESERVED_NAMESPACES = ["llamafarm"]
 class Project(BaseModel):
     namespace: str
     name: str
-    config: LlamaFarmConfig
+    config: Union[LlamaFarmConfig, dict]
+    validation_error: str | None = None
+    last_modified: datetime | None = None
 
 
 class ProjectService:
@@ -59,6 +64,30 @@ class ProjectService:
                 "Invalid namespace or project_id: path traversal detected"
             )
         return norm_path
+
+    @classmethod
+    def get_project_last_modified(cls, project_dir: str) -> datetime | None:
+        """
+        Get the last modified timestamp of the project's config file.
+        This works in both local and containerized environments as long as
+        the project directory is mounted.
+        """
+        try:
+            # Look for config files in order of preference
+            config_files = ["llamafarm.yaml", "llamafarm.yml", "llamafarm.toml"]
+            for config_file in config_files:
+                config_path = os.path.join(project_dir, config_file)
+                if os.path.isfile(config_path):
+                    mtime = os.path.getmtime(config_path)
+                    return datetime.fromtimestamp(mtime)
+            return None
+        except (OSError, ValueError) as e:
+            logger.warning(
+                "Failed to get last modified time",
+                project_dir=project_dir,
+                error=str(e),
+            )
+            return None
 
     @classmethod
     def create_project(
@@ -137,20 +166,49 @@ class ProjectService:
                 )
                 continue
 
-            # Attempt to load project config; skip if invalid/missing
+            # Attempt to load project config
+            # If validation fails, still include the project but mark it with an error
+            validation_error_msg = None
+            cfg = None
+
             try:
+                # First try to load with full validation
                 cfg = load_config(
                     directory=project_path,
                     validate=False,
                 )
-            except ConfigError as e:
+            except ValidationError as e:
+                # Config file exists but has validation errors
+                # Load as raw dict so it can still be edited in UI
                 logger.warning(
-                    "Skipping project without valid config",
+                    "Project has validation errors, including with error flag",
+                    entry=project_name,
+                    error=str(e),
+                )
+                validation_error_msg = f"Config validation failed: {str(e)}"
+                try:
+                    cfg = load_config_dict(
+                        directory=project_path,
+                        validate=False,
+                    )
+                except Exception as dict_load_error:
+                    # If we can't even load as dict, skip this project
+                    logger.error(
+                        "Failed to load project config even as dict",
+                        entry=project_name,
+                        error=str(dict_load_error),
+                    )
+                    continue
+            except ConfigError as e:
+                # Config file is missing or malformed - skip
+                logger.warning(
+                    "Skipping project without valid config file",
                     entry=project_name,
                     error=str(e),
                 )
                 continue
             except OSError as e:
+                # Filesystem error - skip
                 logger.warning(
                     "Skipping project due to filesystem error",
                     entry=project_name,
@@ -158,13 +216,19 @@ class ProjectService:
                 )
                 continue
 
-            projects.append(
-                Project(
-                    namespace=namespace,
-                    name=project_name,
-                    config=cfg,
+            if cfg is not None:
+                # Get last modified timestamp
+                last_modified = cls.get_project_last_modified(project_path)
+
+                projects.append(
+                    Project(
+                        namespace=namespace,
+                        name=project_name,
+                        config=cfg,
+                        validation_error=validation_error_msg,
+                        last_modified=last_modified,
+                    )
                 )
-            )
         return projects
 
     @classmethod
@@ -181,6 +245,9 @@ class ProjectService:
             raise ProjectNotFoundError(namespace, project_id)
 
         # Ensure a config file exists inside the directory
+        validation_error_msg = None
+        cfg = None
+
         try:
             from config.helpers.loader import find_config_file
 
@@ -200,6 +267,34 @@ class ProjectService:
 
             # Attempt to load config (do not validate here; align with list_projects)
             cfg = load_config(directory=project_dir, validate=False)
+        except ValidationError as e:
+            # Config file exists but has validation errors
+            # Load as raw dict so it can still be edited in UI
+            logger.warning(
+                "Project has validation errors, loading as dict",
+                namespace=namespace,
+                project_id=project_id,
+                error=str(e),
+            )
+            validation_error_msg = f"Config validation failed: {str(e)}"
+            try:
+                cfg = load_config_dict(
+                    directory=project_dir,
+                    validate=False,
+                )
+            except Exception as dict_load_error:
+                # If we can't even load as dict, raise error
+                logger.error(
+                    "Failed to load project config even as dict",
+                    namespace=namespace,
+                    project_id=project_id,
+                    error=str(dict_load_error),
+                )
+                raise ProjectConfigError(
+                    namespace,
+                    project_id,
+                    message="Failed to load project configuration",
+                ) from dict_load_error
         except ProjectConfigError:
             # bubble our structured error
             raise
@@ -226,10 +321,15 @@ class ProjectService:
             )
             raise
 
+        # Get last modified timestamp
+        last_modified = cls.get_project_last_modified(project_dir)
+
         return Project(
             namespace=namespace,
             name=project_id,
             config=cfg,
+            validation_error=validation_error_msg,
+            last_modified=last_modified,
         )
 
     @classmethod
