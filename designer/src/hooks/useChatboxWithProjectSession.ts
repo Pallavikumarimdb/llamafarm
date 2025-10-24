@@ -8,9 +8,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useChatInference, useDeleteChatSession } from './useChat'
 import { createChatRequest, chatInferenceStreaming } from '../api/chatService'
+import { useProject } from './useProjects'
+import { useActiveProject } from './useActiveProject'
+import { filterActiveSetMessages } from '../utils/promptSets'
 import { useProjectSession } from './useProjectSession'
 import { ChatboxMessage } from '../types/chatbox'
-import { ChatStreamChunk, NetworkError } from '../types/chat'
+import { ChatStreamChunk, NetworkError, ChatMessage } from '../types/chat'
 import { generateMessageId } from '../utils/idGenerator'
 
 /**
@@ -42,6 +45,14 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
     chatService: 'designer',
     autoCreate: false, // Sessions created on first message
   })
+
+  // Load project config to include active prompt set
+  const activeProject = useActiveProject()
+  const { data: projectResponse } = useProject(
+    activeProject?.namespace || '',
+    activeProject?.project || '',
+    !!activeProject?.namespace && !!activeProject?.project
+  )
 
   // UI state
   const [inputValue, setInputValue] = useState('')
@@ -92,6 +103,35 @@ export function useChatboxWithProjectSession(enableStreaming: boolean = true) {
 
       try {
         const chatRequest = createChatRequest(messageContent)
+        // Prepend active prompt set for streaming path as well
+        const streamPrompts = projectResponse?.project?.config
+          ?.prompts as Array<{
+          role?: string
+          content: string
+        }>
+        if (Array.isArray(streamPrompts) && streamPrompts.length > 0) {
+          const systemMessages = filterActiveSetMessages(
+            streamPrompts
+          ) as ChatMessage[]
+          if (systemMessages.length > 0) {
+            chatRequest.messages = [...systemMessages, ...chatRequest.messages]
+          }
+        }
+        // Prepend active prompt set for fallback (non-streaming)
+        const projectPrompts = projectResponse?.project?.config
+          ?.prompts as Array<{
+          role?: string
+          content: string
+        }>
+        if (Array.isArray(projectPrompts) && projectPrompts.length > 0) {
+          const systemMessages = filterActiveSetMessages(
+            projectPrompts
+          ) as ChatMessage[]
+          if (systemMessages.length > 0) {
+            chatRequest.messages = [...systemMessages, ...chatRequest.messages]
+          }
+        }
+        // (no-op: legacy duplication removed)
         const response = await chatMutation.mutateAsync({
           chatRequest,
           sessionId: currentSessionId,

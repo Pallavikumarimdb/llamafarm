@@ -81,7 +81,7 @@ const PromptModal: React.FC<PromptModalProps> = ({
             </div>
           )}
           <div>
-            <label className="text-xs text-muted-foreground">Role</label>
+            <label className="text-xs text-muted-foreground mb-0">Role</label>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="w-full h-9 rounded-md border border-input bg-background px-3 text-left flex items-center justify-between mt-1">
@@ -103,7 +103,9 @@ const PromptModal: React.FC<PromptModalProps> = ({
             </DropdownMenu>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Prompt text</label>
+            <label className="text-xs text-muted-foreground mb-0">
+              Prompt text
+            </label>
             <textarea
               rows={10}
               className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground font-mono text-sm"
