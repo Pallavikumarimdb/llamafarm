@@ -21,7 +21,7 @@ import {
 } from '../ui/dialog'
 import { Label } from '../ui/label'
 import { useActiveProject } from '../../hooks/useActiveProject'
-import { useProject } from '../../hooks/useProjects'
+import { useProject, useUpdateProject } from '../../hooks/useProjects'
 import { Checkbox } from '../ui/checkbox'
 import { parsePromptSets } from '../../utils/promptSets'
 
@@ -236,9 +236,11 @@ function ProjectInferenceModels({
 function CloudModelsForm({
   onAddModel,
   onGoToProject,
+  promptSetNames: _promptSetNames,
 }: {
   onAddModel: (m: InferenceModel) => void
   onGoToProject: () => void
+  promptSetNames: string[]
 }) {
   const providerOptions = [
     'OpenAI',
@@ -468,9 +470,11 @@ function CloudModelsForm({
 function AddOrChangeModels({
   onAddModel,
   onGoToProject,
+  promptSetNames,
 }: {
   onAddModel: (m: InferenceModel) => void
   onGoToProject: () => void
+  promptSetNames: string[]
 }) {
   const [sourceTab, setSourceTab] = useState<'local' | 'cloud'>('local')
   const [query, setQuery] = useState('')
@@ -482,6 +486,9 @@ function AddOrChangeModels({
   const [submitState, setSubmitState] = useState<
     'idle' | 'loading' | 'success'
   >('idle')
+  const [modelName, setModelName] = useState('')
+  const [modelDescription, setModelDescription] = useState('')
+  const [selectedPromptSets, setSelectedPromptSets] = useState<string[]>([])
 
   interface ModelVariant {
     id: number
@@ -738,19 +745,21 @@ function AddOrChangeModels({
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative w-full">
-        <FontIcon
-          type="search"
-          className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
-        />
-        <Input
-          placeholder="Search local options"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          className="pl-9 h-10"
-        />
-      </div>
+      {/* Search - only show for local models */}
+      {sourceTab === 'local' && (
+        <div className="relative w-full">
+          <FontIcon
+            type="search"
+            className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
+          />
+          <Input
+            placeholder="Search local options"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            className="pl-9 h-10"
+          />
+        </div>
+      )}
 
       {/* Table */}
       {sourceTab === 'local' && (
@@ -841,10 +850,27 @@ function AddOrChangeModels({
         </div>
       )}
       {sourceTab === 'cloud' && (
-        <CloudModelsForm
-          onAddModel={onAddModel}
-          onGoToProject={onGoToProject}
-        />
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3 p-3 rounded-md bg-secondary/40 border border-border">
+            <p className="text-xs text-muted-foreground">
+              Cloud model options coming soon!
+            </p>
+          </div>
+          <div className="relative">
+            <div className="opacity-40 pointer-events-none">
+              <CloudModelsForm
+                onAddModel={onAddModel}
+                onGoToProject={onGoToProject}
+                promptSetNames={promptSetNames}
+              />
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="bg-background/80 backdrop-blur-sm rounded-lg px-6 py-3 border border-border shadow-lg">
+                <div className="text-sm font-medium">Coming soon</div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <Dialog
@@ -854,6 +880,9 @@ function AddOrChangeModels({
           if (!open) {
             setSubmitState('idle')
             setPendingVariant(null)
+            setModelName('')
+            setModelDescription('')
+            setSelectedPromptSets([])
           }
         }}
       >
@@ -861,13 +890,104 @@ function AddOrChangeModels({
           <DialogTitle>Download and add this model?</DialogTitle>
           <DialogDescription>
             {pendingVariant ? (
-              <div className="mt-2 text-sm">
-                You are about to download and add
-                <span className="mx-1 font-medium text-foreground">
-                  {pendingVariant.label}
-                </span>
-                to your project.
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div className="mt-2 flex flex-col gap-3">
+                <p className="text-sm">
+                  You are about to download and add
+                  <span className="mx-1 font-medium text-foreground">
+                    {pendingVariant.label}
+                  </span>
+                  to your project.
+                </p>
+
+                <div>
+                  <label className="text-xs text-muted-foreground">Name</label>
+                  <input
+                    type="text"
+                    placeholder="Enter model name"
+                    value={modelName}
+                    onChange={e => setModelName(e.target.value)}
+                    className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground">
+                    Description
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter model description"
+                    value={modelDescription}
+                    onChange={e => setModelDescription(e.target.value)}
+                    className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    Prompt sets
+                  </label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="w-full h-9 rounded-lg border border-input bg-background px-3 text-left flex items-center justify-between">
+                        <span className="truncate text-sm flex items-center gap-2">
+                          {selectedPromptSets.length > 0 ? (
+                            <>
+                              <span className="inline-flex items-center px-2 py-0.5 text-[10px] rounded-full bg-secondary text-secondary-foreground">
+                                {selectedPromptSets.length}
+                              </span>
+                              <span className="truncate">
+                                {selectedPromptSets.join(', ')}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              All sets
+                            </span>
+                          )}
+                        </span>
+                        <FontIcon type="chevron-down" className="w-4 h-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-64 max-h-64 overflow-auto">
+                      {promptSetNames.map(name => (
+                        <DropdownMenuItem
+                          key={name}
+                          className="w-full justify-start text-left"
+                          onSelect={e => e.preventDefault()}
+                        >
+                          <label className="flex items-center gap-2 w-full">
+                            <Checkbox
+                              checked={selectedPromptSets.includes(name)}
+                              onCheckedChange={v => {
+                                if (v) {
+                                  setSelectedPromptSets(prev => [...prev, name])
+                                } else {
+                                  setSelectedPromptSets(prev =>
+                                    prev.filter(s => s !== name)
+                                  )
+                                }
+                              }}
+                            />
+                            <span className="text-sm">{name}</span>
+                          </label>
+                        </DropdownMenuItem>
+                      ))}
+                      <div className="h-px bg-border my-1" />
+                      <DropdownMenuItem
+                        onClick={() => setSelectedPromptSets([])}
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          Clear selection
+                        </span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-muted-foreground">Provider</div>
+                  <div>Ollama</div>
                   <div className="text-muted-foreground">Parameter size</div>
                   <div>{pendingVariant.parameterSize}</div>
                   <div className="text-muted-foreground">Download size</div>
@@ -881,15 +1001,15 @@ function AddOrChangeModels({
               Cancel
             </Button>
             <Button
-              disabled={submitState === 'loading'}
+              disabled={submitState === 'loading' || !modelName.trim()}
               onClick={() => {
                 if (!pendingVariant) return
-                // Show download and add a placeholder card
+                // Show download and add a placeholder card with user-entered data
                 onAddModel({
                   id: `dl-${pendingVariant.id}`,
-                  name:
-                    pendingVariant.label.split(',')[0] ?? pendingVariant.label,
-                  meta: 'Downloading…',
+                  name: modelName.trim(),
+                  modelIdentifier: pendingVariant.label,
+                  meta: modelDescription.trim() || 'Downloading…',
                   badges: ['Local', 'Ollama'],
                   status: 'downloading',
                 })
@@ -943,9 +1063,12 @@ const Models = () => {
     activeProject?.project || '',
     !!activeProject?.namespace && !!activeProject?.project
   )
+  const updateProject = useUpdateProject()
   const [activeTab, setActiveTab] = useState('project')
   const [mode, setMode] = useState<Mode>('designer')
   const [projectModels, setProjectModels] = useState<InferenceModel[]>([])
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [modelToDelete, setModelToDelete] = useState<string | null>(null)
 
   // Load models from config
   useEffect(() => {
@@ -974,11 +1097,55 @@ const Models = () => {
     setProjectModels(mappedModels)
   }, [projectResponse])
 
-  const addProjectModel = (m: InferenceModel) => {
+  const addProjectModel = async (m: InferenceModel) => {
+    if (
+      !activeProject?.namespace ||
+      !activeProject?.project ||
+      !projectResponse?.project?.config
+    )
+      return
+
+    // Add to local state first for immediate UI feedback
     setProjectModels(prev => {
       if (prev.some(x => x.id === m.id)) return prev
       return [...prev, m]
     })
+
+    // Add to config
+    const currentConfig = projectResponse.project.config
+    const runtimeModels = currentConfig.runtime?.models || []
+
+    const newModel = {
+      name: m.name,
+      description: m.meta === 'Downloading…' ? '' : m.meta,
+      provider: 'ollama',
+      model: m.modelIdentifier || m.name,
+      base_url: 'http://host.docker.internal:11434',
+      prompt_format: 'unstructured',
+      provider_config: {},
+      prompts: [],
+    }
+
+    const updatedModels = [...runtimeModels, newModel]
+
+    const nextConfig = {
+      ...currentConfig,
+      runtime: {
+        ...currentConfig.runtime,
+        models: updatedModels,
+      },
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        namespace: activeProject.namespace,
+        projectId: activeProject.project,
+        request: { config: nextConfig },
+      })
+    } catch (error) {
+      console.error('Failed to add model to config:', error)
+    }
+
     if (m.status === 'downloading') {
       const addedId = m.id
       setTimeout(() => {
@@ -988,7 +1155,10 @@ const Models = () => {
               ? {
                   ...x,
                   status: 'ready',
-                  meta: `Added on ${new Date().toLocaleDateString()}`,
+                  meta:
+                    x.meta === 'Downloading…'
+                      ? `Added on ${new Date().toLocaleDateString()}`
+                      : x.meta,
                 }
               : x
           )
@@ -1003,10 +1173,46 @@ const Models = () => {
   }
 
   const deleteModel = (id: string) => {
-    // Models are read-only. Edit config to remove models.
-    alert(
-      'Models are currently read-only. Use the Config editor to modify models.'
+    setModelToDelete(id)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDeleteModel = async () => {
+    if (
+      !modelToDelete ||
+      !activeProject?.namespace ||
+      !activeProject?.project ||
+      !projectResponse?.project?.config
     )
+      return
+
+    const currentConfig = projectResponse.project.config
+    const runtimeModels = currentConfig.runtime?.models || []
+
+    // Remove the model from config
+    const updatedModels = runtimeModels.filter(
+      (m: any) => m.name !== modelToDelete
+    )
+
+    const nextConfig = {
+      ...currentConfig,
+      runtime: {
+        ...currentConfig.runtime,
+        models: updatedModels,
+      },
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        namespace: activeProject.namespace,
+        projectId: activeProject.project,
+        request: { config: nextConfig },
+      })
+      setDeleteConfirmOpen(false)
+      setModelToDelete(null)
+    } catch (error) {
+      console.error('Failed to delete model:', error)
+    }
   }
 
   // Prompt set assignment per model (loaded from config)
@@ -1123,6 +1329,7 @@ const Models = () => {
             <AddOrChangeModels
               onAddModel={addProjectModel}
               onGoToProject={() => setActiveTab('project')}
+              promptSetNames={promptSetNames}
             />
           )}
           {activeTab === 'training' && <TrainingData />}
@@ -1130,6 +1337,39 @@ const Models = () => {
       )}
 
       {/* Inline multi-select on cards replaces separate dialog */}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>Delete model</DialogTitle>
+          <div className="text-sm text-muted-foreground">
+            Are you sure you want to delete this model? This will remove it from
+            your project configuration.
+          </div>
+          <DialogFooter className="flex flex-row items-center justify-between sm:justify-between gap-2">
+            <div />
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                className="px-3 py-2 rounded-md text-sm text-primary hover:underline"
+                onClick={() => {
+                  setDeleteConfirmOpen(false)
+                  setModelToDelete(null)
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 text-sm"
+                onClick={confirmDeleteModel}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
