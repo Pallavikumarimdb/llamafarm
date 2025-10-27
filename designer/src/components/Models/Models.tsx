@@ -109,12 +109,12 @@ function ModelCard({
 
       <div className="grid grid-cols-1 md:grid-cols-2 md:items-center gap-3 w-full">
         <div>
-          <div className="text-sm text-muted-foreground mb-1">{model.name}</div>
+          <div className="text-sm text-muted-foreground mb-1">
+            {model.modelIdentifier || model.name}
+          </div>
 
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-lg font-medium">
-              {model.modelIdentifier || model.name}
-            </div>
+            <div className="text-lg font-medium">{model.name}</div>
             {model.isDefault && (
               <div className="text-[10px] leading-4 rounded-xl px-2 py-0.5 bg-teal-600 text-teal-50 dark:bg-teal-400 dark:text-teal-900">
                 Default
