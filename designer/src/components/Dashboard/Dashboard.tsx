@@ -119,41 +119,14 @@ const Dashboard = () => {
       window.removeEventListener('lf-active-project', handler as EventListener)
   }, [])
 
-  // Keep default project model in sync (listen for updates)
-  const [defaultModelName, setDefaultModelName] = useState<string>(() => {
-    try {
-      const raw = localStorage.getItem('lf_default_project_model')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        return parsed?.name || 'TinyLlama'
-      }
-    } catch {}
-    return 'TinyLlama'
-  })
-  useEffect(() => {
-    const load = () => {
-      try {
-        const raw = localStorage.getItem('lf_default_project_model')
-        if (raw) {
-          const parsed = JSON.parse(raw)
-          setDefaultModelName(parsed?.name || 'TinyLlama')
-        }
-      } catch {}
+  // Get default model name from config
+  const defaultModelName = useMemo(() => {
+    const config = projectDetail?.project?.config as any
+    if (!config?.runtime?.default_model) {
+      return 'No model configured'
     }
-    const handler = () => load()
-    window.addEventListener(
-      'lf:defaultProjectModelUpdated',
-      handler as EventListener
-    )
-    window.addEventListener('storage', handler)
-    return () => {
-      window.removeEventListener(
-        'lf:defaultProjectModelUpdated',
-        handler as EventListener
-      )
-      window.removeEventListener('storage', handler)
-    }
-  }, [])
+    return config.runtime.default_model
+  }, [projectDetail])
 
   return (
     <>

@@ -56,6 +56,7 @@ type ModelStatus = 'ready' | 'downloading'
 interface InferenceModel {
   id: string
   name: string
+  modelIdentifier?: string
   meta: string
   badges: string[]
   isDefault?: boolean
@@ -106,18 +107,24 @@ function ModelCard({
         </DropdownMenu>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 md:items-end gap-3 w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:items-center gap-3 w-full">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="text-sm">{model.name}</div>
+          <div className="text-sm text-muted-foreground mb-1">{model.name}</div>
+
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-lg font-medium">
+              {model.modelIdentifier || model.name}
+            </div>
             {model.isDefault && (
               <div className="text-[10px] leading-4 rounded-xl px-2 py-0.5 bg-teal-600 text-teal-50 dark:bg-teal-400 dark:text-teal-900">
                 Default
               </div>
             )}
           </div>
-          <div className="text-xs text-muted-foreground">{model.meta}</div>
-          <div className="flex flex-row gap-2 mt-3">
+
+          <div className="text-sm text-muted-foreground mb-3">{model.meta}</div>
+
+          <div className="flex flex-row gap-2 mb-2">
             {model.badges.map((b, i) => (
               <div
                 key={`${b}-${i}`}
@@ -127,6 +134,7 @@ function ModelCard({
               </div>
             ))}
           </div>
+
           {model.status === 'downloading' ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader
@@ -138,7 +146,7 @@ function ModelCard({
           ) : null}
         </div>
         {/* Prompt sets multi-select column */}
-        <div className="mt-3 md:mt-0 md:justify-self-end w-full flex flex-col justify-end md:pl-4">
+        <div className="mt-3 md:mt-0 md:justify-self-end w-full flex flex-col md:pl-4">
           <div className="text-xs text-muted-foreground mb-1">Prompt sets</div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -937,35 +945,34 @@ const Models = () => {
   )
   const [activeTab, setActiveTab] = useState('project')
   const [mode, setMode] = useState<Mode>('designer')
-  const [projectModels, setProjectModels] = useState<InferenceModel[]>([
-    {
-      id: 'tinyllama',
-      name: 'TinyLlama',
-      meta: 'Updated on 8/23/25',
-      badges: ['Local', 'Ollama'],
-      isDefault: true,
-    },
-    {
-      id: 'gpt5',
-      name: 'GPT5',
-      meta: 'Updated on 8/23/25',
-      badges: ['Cloud', 'OpenAI'],
-    },
-  ])
+  const [projectModels, setProjectModels] = useState<InferenceModel[]>([])
 
-  // Initialize default model from persisted selection
+  // Load models from config
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('lf_default_project_model')
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      const savedId = parsed?.id
-      if (!savedId) return
-      setProjectModels(prev =>
-        prev.map(m => ({ ...m, isDefault: m.id === savedId }))
-      )
-    } catch {}
-  }, [])
+    if (!projectResponse?.project?.config?.runtime?.models) {
+      setProjectModels([])
+      return
+    }
+
+    const runtimeModels = projectResponse.project.config.runtime.models
+    const defaultModelName =
+      projectResponse.project.config.runtime.default_model
+
+    const mappedModels: InferenceModel[] = runtimeModels.map((model: any) => ({
+      id: model.name,
+      name: model.name,
+      modelIdentifier: model.model,
+      meta: model.description || 'Model from config',
+      badges: [
+        model.provider === 'ollama' ? 'Local' : 'Cloud',
+        model.provider.charAt(0).toUpperCase() + model.provider.slice(1),
+      ],
+      isDefault: model.name === defaultModelName,
+      status: 'ready' as ModelStatus,
+    }))
+
+    setProjectModels(mappedModels)
+  }, [projectResponse])
 
   const addProjectModel = (m: InferenceModel) => {
     setProjectModels(prev => {
@@ -991,46 +998,36 @@ const Models = () => {
   }
 
   const makeDefault = (id: string) => {
-    // Persist selection to localStorage and notify listeners
-    try {
-      const chosen = projectModels.find(m => m.id === id)
-      if (chosen) {
-        localStorage.setItem(
-          'lf_default_project_model',
-          JSON.stringify({ id: chosen.id, name: chosen.name })
-        )
-        if (typeof window !== 'undefined') {
-          try {
-            window.dispatchEvent(
-              new CustomEvent('lf:defaultProjectModelUpdated', {
-                detail: { id: chosen.id, name: chosen.name },
-              })
-            )
-          } catch {}
-        }
-      }
-    } catch {}
+    // Note: This only updates UI state. To persist, edit config directly.
     setProjectModels(prev => prev.map(m => ({ ...m, isDefault: m.id === id })))
   }
 
   const deleteModel = (id: string) => {
-    setProjectModels(prev => prev.filter(m => m.id !== id))
+    // Models are read-only. Edit config to remove models.
+    alert(
+      'Models are currently read-only. Use the Config editor to modify models.'
+    )
   }
 
-  // Prompt set assignment per model (Designer-only, localStorage)
+  // Prompt set assignment per model (loaded from config)
   const mapKey =
     activeProject?.namespace && activeProject?.project
       ? `lf_model_prompt_sets:${activeProject.namespace}/${activeProject.project}`
       : null
 
-  const loadMap = (): Record<string, string[]> => {
-    try {
-      if (!mapKey) return {}
-      const raw = localStorage.getItem(mapKey)
-      return raw ? (JSON.parse(raw) as Record<string, string[]>) : {}
-    } catch {
-      return {}
-    }
+  const loadMapFromConfig = (): Record<string, string[]> => {
+    if (!projectResponse?.project?.config?.runtime?.models) return {}
+
+    const modelPromptsMap: Record<string, string[]> = {}
+    const runtimeModels = projectResponse.project.config.runtime.models
+
+    runtimeModels.forEach((model: any) => {
+      if (model.name && model.prompts && Array.isArray(model.prompts)) {
+        modelPromptsMap[model.name] = model.prompts
+      }
+    })
+
+    return modelPromptsMap
   }
 
   const saveMap = (next: Record<string, string[]>) => {
@@ -1040,9 +1037,7 @@ const Models = () => {
     } catch {}
   }
 
-  const [modelSetMap, setModelSetMap] = useState<Record<string, string[]>>(() =>
-    loadMap()
-  )
+  const [modelSetMap, setModelSetMap] = useState<Record<string, string[]>>({})
 
   const promptSetNames = (() => {
     const prompts = projectResponse?.project?.config?.prompts as
@@ -1055,10 +1050,11 @@ const Models = () => {
     return sets.map((s: { name: string }) => s.name)
   })()
 
+  // Load model-to-prompts mapping from config
   useEffect(() => {
-    setModelSetMap(loadMap())
+    setModelSetMap(loadMapFromConfig())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProject?.namespace, activeProject?.project])
+  }, [projectResponse])
 
   const getSelectedFor = (id: string): string[] => modelSetMap[id] || []
 
