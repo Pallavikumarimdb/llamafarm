@@ -1314,17 +1314,39 @@ const Models = () => {
             ]}
           />
 
-          {activeTab === 'project' && (
-            <ProjectInferenceModels
-              models={projectModels}
-              onMakeDefault={makeDefault}
-              onDelete={deleteModel}
-              getSelected={getSelectedFor}
-              promptSetNames={promptSetNames}
-              onToggle={toggleFor}
-              onClear={clearFor}
-            />
-          )}
+          {activeTab === 'project' &&
+            (projectModels.length === 0 ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center px-6 py-10 rounded-xl border border-border bg-card/40 max-w-md">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/15 border border-primary/30">
+                    <FontIcon type="model" className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="text-lg font-medium text-foreground mb-2">
+                    No models yet
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-6">
+                    Add your first model to start building. You can add local
+                    Ollama models or configure cloud providers.
+                  </div>
+                  <Button
+                    onClick={() => setActiveTab('manage')}
+                    className="w-full sm:w-auto"
+                  >
+                    Add models
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <ProjectInferenceModels
+                models={projectModels}
+                onMakeDefault={makeDefault}
+                onDelete={deleteModel}
+                getSelected={getSelectedFor}
+                promptSetNames={promptSetNames}
+                onToggle={toggleFor}
+                onClear={clearFor}
+              />
+            ))}
           {activeTab === 'manage' && (
             <AddOrChangeModels
               onAddModel={addProjectModel}
