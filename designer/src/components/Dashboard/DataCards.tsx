@@ -13,13 +13,25 @@ const DataCards = ({
 }: DataCardsProps) => {
   const navigate = useNavigate()
 
+  const handleKeyDown = (
+    event: React.KeyboardEvent,
+    callback: () => void
+  ) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      callback()
+    }
+  }
+
   return (
     <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-4">
       <div
         className="min-h-[103px] flex flex-col rounded-lg p-6 pb-8 bg-card min-w-0 overflow-hidden cursor-pointer hover:bg-accent/20 transition-colors"
         onClick={() => navigate('/chat/data')}
+        onKeyDown={(e) => handleKeyDown(e, () => navigate('/chat/data'))}
         role="button"
         aria-label="View data"
+        tabIndex={0}
       >
         <div className="text-sm text-foreground">Number of files processed</div>
         <div className="flex flex-row gap-2 items-baseline min-w-0">
@@ -34,8 +46,10 @@ const DataCards = ({
       <div
         className="min-h-[103px] flex flex-col rounded-lg p-6 pb-8 bg-card min-w-0 overflow-hidden cursor-pointer hover:bg-accent/20 transition-colors"
         onClick={() => navigate('/chat/databases')}
+        onKeyDown={(e) => handleKeyDown(e, () => navigate('/chat/databases'))}
         role="button"
         aria-label="View databases"
+        tabIndex={0}
       >
         <div className="text-sm text-foreground">Database count</div>
         <div className="flex flex-row gap-2 items-baseline min-w-0">
@@ -50,8 +64,10 @@ const DataCards = ({
       <div
         className="min-h-[103px] flex flex-col rounded-lg p-6 pb-8 bg-card min-w-0 overflow-hidden cursor-pointer hover:bg-accent/20 transition-colors"
         onClick={() => navigate('/chat/models')}
+        onKeyDown={(e) => handleKeyDown(e, () => navigate('/chat/models'))}
         role="button"
         aria-label="View models"
+        tabIndex={0}
       >
         <div className="text-sm text-foreground">Models utilized</div>
         <div className="flex flex-row gap-2 items-baseline min-w-0">

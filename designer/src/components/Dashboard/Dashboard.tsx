@@ -19,15 +19,6 @@ const Dashboard = () => {
   // All state declarations first
   const [mode, setMode] = useState<Mode>('designer')
   const [projectName, setProjectName] = useState<string>('Dashboard')
-  const [versions, setVersions] = useState<
-    Array<{
-      id: string
-      name: string
-      description: string
-      date: string
-      isCurrent?: boolean
-    }>
-  >([])
   // Datasets list for Data card
   const { data: apiDatasets, isLoading: isDatasetsLoading } = useListDatasets(
     activeProject?.namespace || '',
@@ -87,8 +78,8 @@ const Dashboard = () => {
     return [] as Array<{ id: string; name: string; lastRun: string | Date }>
   }, [apiDatasets])
 
-  // Calculate total files processed across all datasets
-  const totalFilesProcessed = useMemo(() => {
+  // Calculate dashboard stats
+  const filesProcessed = useMemo(() => {
     if (apiDatasets?.datasets && apiDatasets.datasets.length > 0) {
       return apiDatasets.datasets.reduce((sum, dataset) => {
         return sum + (dataset.files?.length || 0)
@@ -97,22 +88,13 @@ const Dashboard = () => {
     return 0
   }, [apiDatasets])
 
-  // Calculate database count from project config
   const databaseCount = useMemo(() => {
-    const cfgDbs = (projectDetail?.project?.config as any)?.rag?.databases
-    if (Array.isArray(cfgDbs)) {
-      return cfgDbs.length
-    }
-    return 0
+    const databases = projectDetail?.project?.config?.rag?.databases
+    return Array.isArray(databases) ? databases.length : 0
   }, [projectDetail])
 
-  // Calculate models count from project config (runtime model)
   const modelsCount = useMemo(() => {
-    const runtime = (projectDetail?.project?.config as any)?.runtime
-    if (runtime?.model) {
-      return 1
-    }
-    return 0
+    return projectDetail?.project?.config?.runtime?.model ? 1 : 0
   }, [projectDetail])
 
   // Shared modal hook
@@ -170,33 +152,6 @@ const Dashboard = () => {
         handler as EventListener
       )
       window.removeEventListener('storage', handler)
-    }
-  }, [])
-
-  // Load and keep versions list in sync with Versions page/localStorage
-  useEffect(() => {
-    const load = () => {
-      try {
-        const raw = localStorage.getItem('lf_versions')
-        if (raw) {
-          const arr = JSON.parse(raw)
-          if (Array.isArray(arr)) setVersions(arr)
-          else setVersions([])
-        } else setVersions([])
-      } catch {
-        setVersions([])
-      }
-    }
-    load()
-    const onUpdate = () => load()
-    window.addEventListener('lf_versions_updated', onUpdate as EventListener)
-    window.addEventListener('storage', onUpdate)
-    return () => {
-      window.removeEventListener(
-        'lf_versions_updated',
-        onUpdate as EventListener
-      )
-      window.removeEventListener('storage', onUpdate)
     }
   }, [])
 
@@ -277,7 +232,7 @@ const Dashboard = () => {
               </div>
             </div>
             <DataCards
-              filesProcessed={totalFilesProcessed}
+              filesProcessed={filesProcessed}
               databaseCount={databaseCount}
               modelsCount={modelsCount}
             />
@@ -368,56 +323,6 @@ const Dashboard = () => {
                       onClick={() => navigate('/chat/models')}
                     >
                       Go to models
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Project versions (1/3) */}
-              <div className="min-w-0 overflow-hidden hidden">
-                <div className="flex flex-row gap-2 items-center justify-between h-[40px] px-2 rounded-tl-lg rounded-tr-lg bg-card border-b border-border">
-                  <span className="text-foreground pl-2">Project versions</span>
-                </div>
-                <div className="p-6 flex flex-col min-h-[260px] justify-between rounded-b-lg bg-card">
-                  <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
-                    {versions.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">
-                        No versions yet
-                      </div>
-                    ) : (
-                      versions.slice(0, 10).map((v, index) => (
-                        <div
-                          key={`${v.id}_${index}`}
-                          className="flex flex-col mb-2"
-                        >
-                          <div className="flex flex-row gap-2 items-center justify-between">
-                            <div className="text-foreground flex items-center gap-2">
-                              <span>{v.name}</span>
-                              {v.isCurrent ? (
-                                <span className="px-2 py-0.5 rounded-2xl text-[10px] border border-teal-200 text-teal-700 bg-teal-50 dark:border-teal-800 dark:text-teal-300 dark:bg-teal-900/30">
-                                  current
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {v.date}
-                            </div>
-                          </div>
-                          {v.description ? (
-                            <div className="text-xs text-muted-foreground">
-                              {v.description}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="w-full flex justify-center items-center mt-4">
-                    <button
-                      className="w-full rounded-lg py-1 border flex flex-row items-center justify-center border-input text-primary hover:bg-accent/20"
-                      onClick={() => navigate('/chat/versions')}
-                    >
-                      View all versions
                     </button>
                   </div>
                 </div>
