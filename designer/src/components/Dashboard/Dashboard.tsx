@@ -87,6 +87,34 @@ const Dashboard = () => {
     return [] as Array<{ id: string; name: string; lastRun: string | Date }>
   }, [apiDatasets])
 
+  // Calculate total files processed across all datasets
+  const totalFilesProcessed = useMemo(() => {
+    if (apiDatasets?.datasets && apiDatasets.datasets.length > 0) {
+      return apiDatasets.datasets.reduce((sum, dataset) => {
+        return sum + (dataset.files?.length || 0)
+      }, 0)
+    }
+    return 0
+  }, [apiDatasets])
+
+  // Calculate database count from project config
+  const databaseCount = useMemo(() => {
+    const cfgDbs = (projectDetail?.project?.config as any)?.rag?.databases
+    if (Array.isArray(cfgDbs)) {
+      return cfgDbs.length
+    }
+    return 0
+  }, [projectDetail])
+
+  // Calculate models count from project config (runtime model)
+  const modelsCount = useMemo(() => {
+    const runtime = (projectDetail?.project?.config as any)?.runtime
+    if (runtime?.model) {
+      return 1
+    }
+    return 0
+  }, [projectDetail])
+
   // Shared modal hook
   const projectModal = useProjectModalContext()
 
@@ -248,7 +276,11 @@ const Dashboard = () => {
                 </div>
               </div>
             </div>
-            <DataCards />
+            <DataCards
+              filesProcessed={totalFilesProcessed}
+              databaseCount={databaseCount}
+              modelsCount={modelsCount}
+            />
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               {/* Data (1/3) */}
               <div className="flex flex-col min-w-0 overflow-hidden">
