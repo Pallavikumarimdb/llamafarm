@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import ModeToggle, { Mode } from '../ModeToggle'
+import ModeToggle from '../ModeToggle'
 import { Button } from '../ui/button'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import { usePackageModal } from '../../contexts/PackageModalContext'

@@ -20,7 +20,6 @@ import {
 } from '@/types/ragTypes'
 import { useToast } from '../ui/toast'
 import PageActions from '../common/PageActions'
-import { Mode } from '../ModeToggle'
 import Tabs from '../Tabs'
 import ExtractorSettingsForm from './ExtractorSettingsForm'
 import { ChevronDown, Loader2, Plus, Settings, Trash2 } from 'lucide-react'

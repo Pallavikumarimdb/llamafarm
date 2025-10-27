@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import FontIcon from '../common/FontIcon'
-import ModeToggle, { Mode } from './ModeToggle'
+import ModeToggle from './ModeToggle'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Switch } from './ui/switch'
