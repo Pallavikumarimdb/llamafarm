@@ -900,8 +900,9 @@ function AddOrChangeModels({
                 </p>
 
                 <div>
-                  <label className="text-xs text-muted-foreground">Name</label>
+                  <label className="text-xs text-muted-foreground" htmlFor="model-name">Name</label>
                   <input
+                    id="model-name"
                     type="text"
                     placeholder="Enter model name"
                     value={modelName}
@@ -911,10 +912,9 @@ function AddOrChangeModels({
                 </div>
 
                 <div>
-                  <label className="text-xs text-muted-foreground">
-                    Description
-                  </label>
+                  <label className="text-xs text-muted-foreground" htmlFor="model-description">Description</label>
                   <textarea
+                    id="model-description"
                     rows={2}
                     placeholder="Enter model description"
                     value={modelDescription}
@@ -924,12 +924,10 @@ function AddOrChangeModels({
                 </div>
 
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
-                    Prompt sets
-                  </label>
+                  <label className="text-xs text-muted-foreground mb-1 block" htmlFor="prompt-sets-trigger">Prompt sets</label>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="w-full h-9 rounded-lg border border-input bg-background px-3 text-left flex items-center justify-between">
+                      <button id="prompt-sets-trigger" className="w-full h-9 rounded-lg border border-input bg-background px-3 text-left flex items-center justify-between">
                         <span className="truncate text-sm flex items-center gap-2">
                           {selectedPromptSets.length > 0 ? (
                             <>
@@ -1084,18 +1082,30 @@ const Models = () => {
     const defaultModelName =
       projectResponse.project.config.runtime.default_model
 
-    const mappedModels: InferenceModel[] = runtimeModels.map((model: any) => ({
-      id: model.name,
-      name: model.name,
-      modelIdentifier: model.model,
-      meta: model.description || 'Model from config',
-      badges: [
-        model.provider === 'ollama' ? 'Local' : 'Cloud',
-        model.provider.charAt(0).toUpperCase() + model.provider.slice(1),
-      ],
-      isDefault: model.name === defaultModelName,
-      status: 'ready' as ModelStatus,
-    }))
+    const mappedModels: InferenceModel[] = runtimeModels.map((model: any) => {
+      const name: string =
+        (model && (model.name || model.model)) || 'unnamed-model'
+      const provider: string =
+        typeof model?.provider === 'string' ? model.provider : ''
+      const providerBadge = provider
+        ? provider.charAt(0).toUpperCase() + provider.slice(1)
+        : 'Unknown'
+      const localityBadge = provider
+        ? provider === 'ollama'
+          ? 'Local'
+          : 'Cloud'
+        : 'Unknown'
+
+      return {
+        id: name,
+        name,
+        modelIdentifier: typeof model?.model === 'string' ? model.model : '',
+        meta: (model && model.description) || 'Model from config',
+        badges: [localityBadge, providerBadge],
+        isDefault: name === defaultModelName,
+        status: 'ready' as ModelStatus,
+      }
+    })
 
     setProjectModels(mappedModels)
   }, [projectResponse])
@@ -1123,7 +1133,7 @@ const Models = () => {
       description: m.meta === 'Downloading…' ? '' : m.meta,
       provider: 'ollama',
       model: m.modelIdentifier || m.name,
-      base_url: 'http://host.docker.internal:11434',
+      base_url: 'http://localhost:11434',
       prompt_format: 'unstructured',
       provider_config: {},
       prompts: promptSets || [],
@@ -1147,6 +1157,8 @@ const Models = () => {
       })
     } catch (error) {
       console.error('Failed to add model to config:', error)
+      // Rollback local optimistic update
+      setProjectModels(prev => prev.filter(x => x.id !== m.id))
     }
 
     if (m.status === 'downloading') {
@@ -1170,9 +1182,33 @@ const Models = () => {
     }
   }
 
-  const makeDefault = (id: string) => {
-    // Note: This only updates UI state. To persist, edit config directly.
-    setProjectModels(prev => prev.map(m => ({ ...m, isDefault: m.id === id })))
+  const makeDefault = async (id: string) => {
+    if (
+      !activeProject?.namespace ||
+      !activeProject?.project ||
+      !projectResponse?.project?.config
+    )
+      return
+
+    const currentConfig = projectResponse.project.config
+    const nextConfig = {
+      ...currentConfig,
+      runtime: {
+        ...currentConfig.runtime,
+        default_model: id,
+      },
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        namespace: activeProject.namespace,
+        projectId: activeProject.project,
+        request: { config: nextConfig },
+      })
+      setProjectModels(prev => prev.map(m => ({ ...m, isDefault: m.id === id })))
+    } catch (error) {
+      console.error('Failed to set default model:', error)
+    }
   }
 
   const deleteModel = (id: string) => {
@@ -1190,20 +1226,34 @@ const Models = () => {
       return
 
     const currentConfig = projectResponse.project.config
-    const runtimeModels = currentConfig.runtime?.models || []
+    const runtime = currentConfig.runtime || {}
+    const runtimeModels = runtime.models || []
 
     // Remove the model from config
     const updatedModels = runtimeModels.filter(
       (m: any) => m.name !== modelToDelete
     )
 
+    // If deleting the default model, clear the default
+    const newDefaultModel =
+      runtime.default_model === modelToDelete ? undefined : runtime.default_model
+
     const nextConfig = {
       ...currentConfig,
       runtime: {
-        ...currentConfig.runtime,
+        ...runtime,
         models: updatedModels,
+        default_model: newDefaultModel,
       },
     }
+
+    // Optimistically update UI
+    const prevModels = projectModels
+    const prevMap = modelSetMap
+    setProjectModels(prev => prev.filter(x => x.id !== modelToDelete))
+    const optimisticMap = { ...modelSetMap }
+    delete optimisticMap[modelToDelete]
+    setModelSetMap(optimisticMap)
 
     try {
       await updateProject.mutateAsync({
@@ -1215,6 +1265,9 @@ const Models = () => {
       setModelToDelete(null)
     } catch (error) {
       console.error('Failed to delete model:', error)
+      // Rollback optimistic updates
+      setProjectModels(prevModels)
+      setModelSetMap(prevMap)
     }
   }
 
@@ -1260,6 +1313,7 @@ const Models = () => {
     name: string,
     checked: boolean | string
   ) => {
+    const prevMap = { ...modelSetMap }
     const updatedMap = { ...modelSetMap }
     const cur = new Set(updatedMap[id] || [])
     if (checked) cur.add(name)
@@ -1307,10 +1361,13 @@ const Models = () => {
       })
     } catch (error) {
       console.error('Failed to update model prompt sets:', error)
+      // Rollback on failure
+      setModelSetMap(prevMap)
     }
   }
 
   const clearFor = async (id: string) => {
+    const prevMap = { ...modelSetMap }
     const updatedMap = { ...modelSetMap }
     delete updatedMap[id]
 
@@ -1353,6 +1410,8 @@ const Models = () => {
       })
     } catch (error) {
       console.error('Failed to clear model prompt sets:', error)
+      // Rollback on failure
+      setModelSetMap(prevMap)
     }
   }
 

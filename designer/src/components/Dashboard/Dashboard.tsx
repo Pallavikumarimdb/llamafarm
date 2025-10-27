@@ -122,11 +122,13 @@ const Dashboard = () => {
 
   // Get default model name from config
   const defaultModelName = useMemo(() => {
-    const config = projectDetail?.project?.config as any
-    if (!config?.runtime?.default_model) {
+    const config = projectDetail?.project?.config
+    const runtime = (config && (config as Record<string, any>).runtime) || null
+    const def = runtime && (runtime as Record<string, any>).default_model
+    if (!def || typeof def !== 'string' || def.trim().length === 0) {
       return 'No model configured'
     }
-    return config.runtime.default_model
+    return def
   }, [projectDetail])
 
   return (
