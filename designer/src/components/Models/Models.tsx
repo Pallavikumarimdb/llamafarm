@@ -238,7 +238,7 @@ function CloudModelsForm({
   onGoToProject,
   promptSetNames: _promptSetNames,
 }: {
-  onAddModel: (m: InferenceModel) => void
+  onAddModel: (m: InferenceModel, promptSets?: string[]) => void
   onGoToProject: () => void
   promptSetNames: string[]
 }) {
@@ -472,7 +472,7 @@ function AddOrChangeModels({
   onGoToProject,
   promptSetNames,
 }: {
-  onAddModel: (m: InferenceModel) => void
+  onAddModel: (m: InferenceModel, promptSets?: string[]) => void
   onGoToProject: () => void
   promptSetNames: string[]
 }) {
@@ -1005,14 +1005,17 @@ function AddOrChangeModels({
               onClick={() => {
                 if (!pendingVariant) return
                 // Show download and add a placeholder card with user-entered data
-                onAddModel({
-                  id: `dl-${pendingVariant.id}`,
-                  name: modelName.trim(),
-                  modelIdentifier: pendingVariant.label,
-                  meta: modelDescription.trim() || 'Downloading…',
-                  badges: ['Local', 'Ollama'],
-                  status: 'downloading',
-                })
+                onAddModel(
+                  {
+                    id: `dl-${pendingVariant.id}`,
+                    name: modelName.trim(),
+                    modelIdentifier: pendingVariant.label,
+                    meta: modelDescription.trim() || 'Downloading…',
+                    badges: ['Local', 'Ollama'],
+                    status: 'downloading',
+                  },
+                  selectedPromptSets.length > 0 ? selectedPromptSets : undefined
+                )
                 setSubmitState('loading')
                 setTimeout(() => {
                   setSubmitState('success')
@@ -1097,7 +1100,7 @@ const Models = () => {
     setProjectModels(mappedModels)
   }, [projectResponse])
 
-  const addProjectModel = async (m: InferenceModel) => {
+  const addProjectModel = async (m: InferenceModel, promptSets?: string[]) => {
     if (
       !activeProject?.namespace ||
       !activeProject?.project ||
@@ -1123,7 +1126,7 @@ const Models = () => {
       base_url: 'http://host.docker.internal:11434',
       prompt_format: 'unstructured',
       provider_config: {},
-      prompts: [],
+      prompts: promptSets || [],
     }
 
     const updatedModels = [...runtimeModels, newModel]
@@ -1216,11 +1219,6 @@ const Models = () => {
   }
 
   // Prompt set assignment per model (loaded from config)
-  const mapKey =
-    activeProject?.namespace && activeProject?.project
-      ? `lf_model_prompt_sets:${activeProject.namespace}/${activeProject.project}`
-      : null
-
   const loadMapFromConfig = (): Record<string, string[]> => {
     if (!projectResponse?.project?.config?.runtime?.models) return {}
 
@@ -1234,13 +1232,6 @@ const Models = () => {
     })
 
     return modelPromptsMap
-  }
-
-  const saveMap = (next: Record<string, string[]>) => {
-    if (!mapKey) return
-    try {
-      localStorage.setItem(mapKey, JSON.stringify(next))
-    } catch {}
   }
 
   const [modelSetMap, setModelSetMap] = useState<Record<string, string[]>>({})
@@ -1264,27 +1255,105 @@ const Models = () => {
 
   const getSelectedFor = (id: string): string[] => modelSetMap[id] || []
 
-  const toggleFor = (id: string, name: string, checked: boolean | string) => {
-    setModelSetMap(prev => {
-      const next = { ...prev }
-      const cur = new Set(next[id] || [])
-      if (checked) cur.add(name)
-      else cur.delete(name)
-      const arr = Array.from(cur)
-      if (arr.length === 0) delete next[id]
-      else next[id] = arr
-      saveMap(next)
-      return next
+  const toggleFor = async (
+    id: string,
+    name: string,
+    checked: boolean | string
+  ) => {
+    const updatedMap = { ...modelSetMap }
+    const cur = new Set(updatedMap[id] || [])
+    if (checked) cur.add(name)
+    else cur.delete(name)
+    const arr = Array.from(cur)
+    if (arr.length === 0) delete updatedMap[id]
+    else updatedMap[id] = arr
+
+    setModelSetMap(updatedMap)
+
+    // Write to config
+    if (
+      !activeProject?.namespace ||
+      !activeProject?.project ||
+      !projectResponse?.project?.config
+    )
+      return
+
+    const currentConfig = projectResponse.project.config
+    const runtimeModels = currentConfig.runtime?.models || []
+
+    const updatedModels = runtimeModels.map((model: any) => {
+      if (model.name === id) {
+        return {
+          ...model,
+          prompts: updatedMap[id] || [],
+        }
+      }
+      return model
     })
+
+    const nextConfig = {
+      ...currentConfig,
+      runtime: {
+        ...currentConfig.runtime,
+        models: updatedModels,
+      },
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        namespace: activeProject.namespace,
+        projectId: activeProject.project,
+        request: { config: nextConfig },
+      })
+    } catch (error) {
+      console.error('Failed to update model prompt sets:', error)
+    }
   }
 
-  const clearFor = (id: string) => {
-    setModelSetMap(prev => {
-      const next = { ...prev }
-      delete next[id]
-      saveMap(next)
-      return next
+  const clearFor = async (id: string) => {
+    const updatedMap = { ...modelSetMap }
+    delete updatedMap[id]
+
+    setModelSetMap(updatedMap)
+
+    // Write to config
+    if (
+      !activeProject?.namespace ||
+      !activeProject?.project ||
+      !projectResponse?.project?.config
+    )
+      return
+
+    const currentConfig = projectResponse.project.config
+    const runtimeModels = currentConfig.runtime?.models || []
+
+    const updatedModels = runtimeModels.map((model: any) => {
+      if (model.name === id) {
+        return {
+          ...model,
+          prompts: [],
+        }
+      }
+      return model
     })
+
+    const nextConfig = {
+      ...currentConfig,
+      runtime: {
+        ...currentConfig.runtime,
+        models: updatedModels,
+      },
+    }
+
+    try {
+      await updateProject.mutateAsync({
+        namespace: activeProject.namespace,
+        projectId: activeProject.project,
+        request: { config: nextConfig },
+      })
+    } catch (error) {
+      console.error('Failed to clear model prompt sets:', error)
+    }
   }
 
   return (

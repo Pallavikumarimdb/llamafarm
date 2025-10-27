@@ -94,7 +94,8 @@ const Dashboard = () => {
   }, [projectDetail])
 
   const modelsCount = useMemo(() => {
-    return projectDetail?.project?.config?.runtime?.model ? 1 : 0
+    const models = projectDetail?.project?.config?.runtime?.models
+    return Array.isArray(models) ? models.length : 0
   }, [projectDetail])
 
   // Shared modal hook
