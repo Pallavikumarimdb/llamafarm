@@ -17,7 +17,12 @@ const Prompt = () => {
         </h2>
         <div className="flex items-center gap-3">
           <ModeToggle mode={mode} onToggle={setMode} />
-          <Button variant="outline" size="sm" onClick={openPackageModal}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPackageModal}
+            disabled
+          >
             Package
           </Button>
         </div>
