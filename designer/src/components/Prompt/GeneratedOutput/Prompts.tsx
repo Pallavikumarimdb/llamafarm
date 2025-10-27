@@ -66,7 +66,8 @@ const Prompts = () => {
 
   const handleSavePrompt = async (
     text: string,
-    role: 'system' | 'assistant' | 'user'
+    role: 'system' | 'assistant' | 'user',
+    selectedSetIdx?: number
   ) => {
     if (!activeProject || !projectResponse?.project?.config) return
     const { config } = projectResponse.project
@@ -78,7 +79,9 @@ const Prompts = () => {
           }>
         | undefined
     )
-    const setIdx = currentSetIndex ?? 0
+    // Use the selected set index from modal if provided (create mode), otherwise use current set
+    const setIdx =
+      selectedSetIdx !== undefined ? selectedSetIdx : (currentSetIndex ?? 0)
     const idx = setIdx >= 0 ? setIdx : 0
     const nextSets = [...sets]
     const target = { ...nextSets[idx] }
@@ -507,6 +510,8 @@ const Prompts = () => {
         mode={mode}
         initialText={initialText}
         initialRole={initialRole}
+        promptSets={promptSets}
+        selectedSetIndex={currentSetIndex ?? 0}
         onClose={() => setIsOpen(false)}
         onSave={handleSavePrompt}
       />
