@@ -400,7 +400,7 @@ jobs:
         run: |
           # Create base data directory for main llamafarm volume
           mkdir -p "$HOME/.llamafarm"
-          chmod 777 "$HOME/.llamafarm"
+          chmod 777 "$HOME/.llamafarm" || true
 
           # ChromaDB now uses Docker-managed volumes, no directory creation needed
 
