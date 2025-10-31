@@ -55,20 +55,15 @@ func NewNativeOrchestrator(serverURL string) (*NativeOrchestrator, error) {
 }
 
 // EnsureNativeEnvironment ensures the native environment is set up
-// This method is protected by a mutex to prevent parallel initialization
 func (no *NativeOrchestrator) EnsureNativeEnvironment() error {
-	// Lock to prevent parallel environment setup from multiple service starts
 	no.initMu.Lock()
 	defer no.initMu.Unlock()
 
-	// Double-check the initialized flag after acquiring lock
 	if no.initialized {
 		return nil
 	}
 
-	if debug {
-		OutputProgress("Setting up native environment...\n")
-	}
+	OutputProgress("Setting up native environment...\n")
 
 	// Step 1: Ensure UV is installed
 	if _, err := no.uvManager.EnsureUV(); err != nil {
@@ -81,15 +76,12 @@ func (no *NativeOrchestrator) EnsureNativeEnvironment() error {
 	}
 
 	// Step 3: Ensure source code is downloaded and dependencies are synced
-	// (SourceManager has its own mutex to prevent parallel downloads)
 	if err := no.sourceMgr.EnsureSource(); err != nil {
 		return fmt.Errorf("failed to ensure source code: %w", err)
 	}
 
 	no.initialized = true
-	if debug {
-		OutputProgress("Native environment ready\n")
-	}
+	OutputProgress("Native environment ready\n")
 	return nil
 }
 
@@ -108,9 +100,16 @@ func (no *NativeOrchestrator) StartServerNative() error {
 		return nil
 	}
 
-	if debug {
-		OutputProgress("Starting server via native process...\n")
+	// Verify designer build exists before starting server
+	if err := no.sourceMgr.VerifyDesignerBuild(); err != nil {
+		if debug {
+			logDebug(fmt.Sprintf("Designer build not found: %v", err))
+		}
+		// Don't fail server startup if designer is missing - server can run without it
+		// Designer will show as degraded in health check
 	}
+
+	OutputProgress("Starting server via native process...\n")
 
 	// Prepare server environment
 	env := no.getServerEnv()
@@ -148,9 +147,7 @@ func (no *NativeOrchestrator) StartRAGNative() error {
 		return nil
 	}
 
-	if debug {
-		OutputProgress("Starting RAG worker via native process...\n")
-	}
+	OutputProgress("Starting RAG worker via native process...\n")
 
 	// Prepare RAG environment
 	env := no.getRAGEnv()
@@ -167,14 +164,12 @@ func (no *NativeOrchestrator) StartRAGNative() error {
 		return fmt.Errorf("failed to start RAG process: %w", err)
 	}
 
-	// Wait a moment for RAG to start and check if it's still running
+	// Wait a moment for RAG to start
 	time.Sleep(2 * time.Second)
 
-	// Check if the process is still running (it might have crashed immediately)
+	// Verify the process is still running (catches immediate failures)
 	if !no.processMgr.IsProcessHealthy("rag") {
-		homeDir, _ := os.UserHomeDir()
-		logFile := filepath.Join(homeDir, ".llamafarm", "logs", "rag.log")
-		return fmt.Errorf("RAG process started but exited immediately. Check logs: %s", logFile)
+		return fmt.Errorf("RAG process failed to start or crashed during startup - check logs at %s", filepath.Join(ragDir, "logs"))
 	}
 
 	return nil
@@ -195,9 +190,7 @@ func (no *NativeOrchestrator) StartUniversalRuntimeNative() error {
 		return nil
 	}
 
-	if debug {
-		OutputProgress("Starting universal runtime via native process...\n")
-	}
+	OutputProgress("Starting universal runtime via native process...\n")
 
 	// Prepare universal runtime environment
 	env := no.getUniversalRuntimeEnv()
@@ -324,11 +317,20 @@ func (no *NativeOrchestrator) getUniversalRuntimeEnv() []string {
 	if val := os.Getenv("TRANSFORMERS_FORCE_CPU"); val != "" {
 		env = append(env, fmt.Sprintf("TRANSFORMERS_FORCE_CPU=%s", val))
 	}
+	// Pass through MPS memory limit configuration
+	if val := os.Getenv("PYTORCH_MPS_HIGH_WATERMARK_RATIO"); val != "" {
+		env = append(env, fmt.Sprintf("PYTORCH_MPS_HIGH_WATERMARK_RATIO=%s", val))
+	}
 
 	// Pass through HuggingFace token if set
 	if val := os.Getenv("HF_TOKEN"); val != "" {
 		env = append(env, fmt.Sprintf("HF_TOKEN=%s", val))
 	}
+
+	// Set up file logging for the universal runtime
+	logsDir := filepath.Join(llamafarmDir, "logs")
+	universalLogFile := filepath.Join(logsDir, "universal-runtime.log")
+	env = append(env, fmt.Sprintf("LOG_FILE=%s", universalLogFile))
 
 	// Add any other environment variables from current environment
 	for _, key := range []string{"PATH", "HOME", "USER", "TMPDIR"} {
