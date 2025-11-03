@@ -55,7 +55,7 @@ export interface UseProjectModalReturn {
   // CRUD operations
   saveProject: (
     name: string,
-    details?: { brief: { what: string; goals: string; audience: string } }
+    details?: { brief?: { what?: string } }
   ) => Promise<void>
   deleteProject: () => Promise<void>
 
@@ -141,7 +141,7 @@ export const useProjectModal = ({
   // Save project (create or update)
   const saveProject = async (
     name: string,
-    details?: { brief: { what: string; goals: string; audience: string } }
+    details?: { brief?: { what?: string } }
   ): Promise<void> => {
     const sanitizedName = sanitizeProjectName(name)
 
@@ -208,11 +208,9 @@ export const useProjectModal = ({
           // Update details on same project (no rename)
           try {
             const updates: Record<string, any> = {}
-            if (details && details.brief) {
+            if (details?.brief?.what) {
               updates.project_brief = {
-                what: details.brief.what || '',
-                goals: details.brief.goals || '',
-                audience: details.brief.audience || '',
+                what: details.brief.what,
               }
             }
             if (Object.keys(updates).length > 0) {
@@ -255,11 +253,9 @@ export const useProjectModal = ({
           name: newName,
           namespace,
         }
-        if (details && details.brief) {
+        if (details?.brief?.what) {
           updatesAfterRename.project_brief = {
-            what: details.brief.what || '',
-            goals: details.brief.goals || '',
-            audience: details.brief.audience || '',
+            what: details.brief.what,
           }
         }
         const copiedConfig = mergeProjectConfig(
