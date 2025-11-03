@@ -82,11 +82,22 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     mode === 'create' ? 'Create new database' : `Edit ${initialDatabase?.name}`
   const cta = mode === 'create' ? 'Create' : 'Save'
 
-  const nameValidationError =
-    name.trim().length > 0 &&
-    (!/^[a-zA-Z0-9_-]+$/.test(name.trim()) || !/[a-zA-Z0-9]/.test(name.trim()))
-      ? 'Database name must contain at least one letter or number'
-      : null
+  const nameValidationError = (() => {
+    const trimmedName = name.trim()
+    if (trimmedName.length === 0) return null
+
+    // Check for invalid characters first
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
+      return 'Database name can only contain letters, numbers, hyphens (-), and underscores (_)'
+    }
+
+    // Check for at least one alphanumeric character
+    if (!/[a-zA-Z0-9]/.test(trimmedName)) {
+      return 'Database name must contain at least one letter or number'
+    }
+
+    return null
+  })()
 
   const isValid = name.trim().length > 0 && !nameValidationError && !isLoading
 
