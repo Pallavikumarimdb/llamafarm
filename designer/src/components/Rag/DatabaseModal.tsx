@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
+import { useToast } from '../ui/toast'
 import type { Database } from '../../hooks/useDatabaseManager'
 
 export type DatabaseModalMode = 'create' | 'edit'
@@ -37,6 +38,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   error = null,
   affectedDatasets = [],
 }) => {
+  const { toast } = useToast()
   const [name, setName] = useState('')
   const [type, setType] = useState<'ChromaStore' | 'QdrantStore'>('ChromaStore')
   const [copyFromDb, setCopyFromDb] = useState('none')
@@ -81,8 +83,9 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const cta = mode === 'create' ? 'Create' : 'Save'
 
   const nameValidationError =
-    name.trim().length > 0 && !/^[a-zA-Z0-9_-]+$/.test(name.trim())
-      ? 'Database name can only contain letters, numbers, hyphens (-), and underscores (_)'
+    name.trim().length > 0 &&
+    (!/^[a-zA-Z0-9_-]+$/.test(name.trim()) || !/[a-zA-Z0-9]/.test(name.trim()))
+      ? 'Database name must contain at least one letter or number'
       : null
 
   const isValid = name.trim().length > 0 && !nameValidationError && !isLoading
@@ -97,6 +100,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '_')
           .replace(/^_+|_+$/g, '')
+
+        // Validate that sanitization didn't result in an empty string
+        if (!snakeCaseName) {
+          toast({
+            message: 'Database name must contain at least one letter or number',
+            variant: 'destructive',
+          })
+          return
+        }
 
         const sourceDb =
           copyFromDb !== 'none'
