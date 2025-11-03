@@ -32,7 +32,10 @@ import {
 } from '../ui/tooltip'
 import { apiClient } from '../../api/client'
 import DatabaseModal from './DatabaseModal'
-import { useDatabaseManager, type Database as DatabaseType } from '../../hooks/useDatabaseManager'
+import {
+  useDatabaseManager,
+  type Database as DatabaseType,
+} from '../../hooks/useDatabaseManager'
 
 type Database = {
   name: string
@@ -62,7 +65,9 @@ function Databases() {
 
   // Database modal state
   const [databaseModalOpen, setDatabaseModalOpen] = useState(false)
-  const [databaseModalMode, setDatabaseModalMode] = useState<'create' | 'edit'>('create')
+  const [databaseModalMode, setDatabaseModalMode] = useState<'create' | 'edit'>(
+    'create'
+  )
   const [editingDatabase, setEditingDatabase] = useState<Database | null>(null)
   const [databaseError, setDatabaseError] = useState<string | null>(null)
 
@@ -549,7 +554,7 @@ function Databases() {
   }
 
   const openEditDatabaseModal = (dbName: string) => {
-    const db = databases.find((d) => d.name === dbName)
+    const db = databases.find(d => d.name === dbName)
     if (!db) return
     setDatabaseModalMode('edit')
     setEditingDatabase(db)
@@ -599,9 +604,9 @@ function Databases() {
       // If renaming, update datasets that reference this database
       let datasetUpdates: Array<{ name: string; database: string }> = []
       if (updates.name && updates.name !== oldName) {
-        const affectedDatasets = datasetsResp?.datasets?.filter(
-          (d: any) => d.database === oldName
-        ) || []
+        const affectedDatasets =
+          datasetsResp?.datasets?.filter((d: any) => d.database === oldName) ||
+          []
         datasetUpdates = affectedDatasets.map((d: any) => ({
           name: d.name,
           database: updates.name!,
@@ -621,7 +626,11 @@ function Databases() {
       })
 
       // Update active database if it was renamed
-      if (updates.name && updates.name !== oldName && activeDatabase === oldName) {
+      if (
+        updates.name &&
+        updates.name !== oldName &&
+        activeDatabase === oldName
+      ) {
         setActiveDatabase(updates.name)
       }
 
@@ -633,7 +642,10 @@ function Databases() {
     }
   }
 
-  const handleDeleteDatabase = async (databaseName: string, reassignTo?: string) => {
+  const handleDeleteDatabase = async (
+    databaseName: string,
+    reassignTo?: string
+  ) => {
     try {
       setDatabaseError(null)
       const projectConfig = (projectResp as any)?.project?.config
@@ -654,7 +666,7 @@ function Databases() {
 
       // Switch to first remaining database if the deleted one was active
       if (activeDatabase === databaseName && databases.length > 1) {
-        const remaining = databases.filter((db) => db.name !== databaseName)
+        const remaining = databases.filter(db => db.name !== databaseName)
         if (remaining.length > 0) {
           setActiveDatabase(remaining[0].name)
         }
@@ -1183,6 +1195,8 @@ function Databases() {
             </div>
           </>
         )}
+
+        <div className="h-24 shrink-0" aria-hidden />
       </div>
 
       {/* Re-embed confirmation modal (after setting default embedding) */}
@@ -1233,22 +1247,28 @@ function Databases() {
         isOpen={databaseModalOpen}
         mode={databaseModalMode}
         initialDatabase={editingDatabase as DatabaseType | undefined}
-        existingDatabases={databases.map((db) => ({
+        existingDatabases={databases.map(db => ({
           name: db.name,
           type: (db.type || 'ChromaStore') as 'ChromaStore' | 'QdrantStore',
           config: db.config,
-          default_embedding_strategy: (projectResp as any)?.project?.config?.rag?.databases?.find(
+          default_embedding_strategy: (
+            projectResp as any
+          )?.project?.config?.rag?.databases?.find(
             (d: any) => d.name === db.name
           )?.default_embedding_strategy,
-          default_retrieval_strategy: (projectResp as any)?.project?.config?.rag?.databases?.find(
+          default_retrieval_strategy: (
+            projectResp as any
+          )?.project?.config?.rag?.databases?.find(
             (d: any) => d.name === db.name
           )?.default_retrieval_strategy,
-          embedding_strategies: (projectResp as any)?.project?.config?.rag?.databases?.find(
-            (d: any) => d.name === db.name
-          )?.embedding_strategies || [],
-          retrieval_strategies: (projectResp as any)?.project?.config?.rag?.databases?.find(
-            (d: any) => d.name === db.name
-          )?.retrieval_strategies || [],
+          embedding_strategies:
+            (projectResp as any)?.project?.config?.rag?.databases?.find(
+              (d: any) => d.name === db.name
+            )?.embedding_strategies || [],
+          retrieval_strategies:
+            (projectResp as any)?.project?.config?.rag?.databases?.find(
+              (d: any) => d.name === db.name
+            )?.retrieval_strategies || [],
         }))}
         onClose={() => {
           setDatabaseModalOpen(false)

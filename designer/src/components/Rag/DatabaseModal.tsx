@@ -63,7 +63,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
       // Set default reassignment database
       if (mode === 'edit' && affectedDatasets.length > 0) {
         const otherDatabases = existingDatabases.filter(
-          (db) => db.name !== initialDatabase?.name
+          db => db.name !== initialDatabase?.name
         )
         setReassignToDb(otherDatabases[0]?.name || '')
       }
@@ -93,12 +93,13 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const title =
     mode === 'create' ? 'Create new database' : `Edit ${initialDatabase?.name}`
   const cta = mode === 'create' ? 'Create' : 'Save'
-  
+
   // Validate database name: only alphanumeric, hyphens, and underscores allowed
-  const nameValidationError = name.trim().length > 0 && !/^[a-zA-Z0-9_-]+$/.test(name.trim())
-    ? 'Database name can only contain letters, numbers, hyphens (-), and underscores (_)'
-    : null
-  
+  const nameValidationError =
+    name.trim().length > 0 && !/^[a-zA-Z0-9_-]+$/.test(name.trim())
+      ? 'Database name can only contain letters, numbers, hyphens (-), and underscores (_)'
+      : null
+
   const isValid = name.trim().length > 0 && !nameValidationError && !isLoading
 
   const handleDelete = () => {
@@ -147,7 +148,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
         // Get source database for copying strategies
         const sourceDb =
           copyFromDb !== 'none'
-            ? existingDatabases.find((db) => db.name === copyFromDb)
+            ? existingDatabases.find(db => db.name === copyFromDb)
             : undefined
 
         // Build new database object
@@ -188,13 +189,13 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
   // Get list of other databases for reassignment
   const otherDatabases = existingDatabases.filter(
-    (db) => db.name !== initialDatabase?.name
+    db => db.name !== initialDatabase?.name
   )
 
   // Get embedding/retrieval strategies from selected copy source
   const copySourceDb =
     copyFromDb !== 'none'
-      ? existingDatabases.find((db) => db.name === copyFromDb)
+      ? existingDatabases.find(db => db.name === copyFromDb)
       : undefined
   const availableEmbeddings = copySourceDb?.embedding_strategies || []
   const availableRetrievals = copySourceDb?.retrieval_strategies || []
@@ -203,15 +204,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         className="sm:max-w-xl"
-        onEscapeKeyDown={(e) => {
+        onEscapeKeyDown={e => {
           e.preventDefault()
           if (!isLoading) onClose()
         }}
-        onPointerDownOutside={(e) => {
+        onPointerDownOutside={e => {
           if (!isLoading) return
           e.preventDefault()
         }}
-        onInteractOutside={(e) => {
+        onInteractOutside={e => {
           if (!isLoading) return
           e.preventDefault()
         }}
@@ -228,15 +229,19 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
               </label>
               <input
                 className={`w-full mt-1 bg-transparent rounded-lg py-2 px-3 border text-foreground ${
-                  error || nameValidationError ? 'border-destructive' : 'border-input'
+                  error || nameValidationError
+                    ? 'border-destructive'
+                    : 'border-input'
                 }`}
                 placeholder="Enter database name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={e => setName(e.target.value)}
                 disabled={isLoading}
               />
               {nameValidationError && (
-                <p className="text-xs text-destructive mt-1">{nameValidationError}</p>
+                <p className="text-xs text-destructive mt-1">
+                  {nameValidationError}
+                </p>
               )}
               {error && !nameValidationError && (
                 <p className="text-xs text-destructive mt-1">{error}</p>
@@ -246,9 +251,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
             <div>
               <label className="text-xs text-muted-foreground">Type</label>
               <select
-                className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                className="w-full mt-1 bg-transparent rounded-lg py-2 pl-3 pr-10 border border-input text-foreground appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 0.75rem center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '1.5em 1.5em',
+                }}
                 value={type}
-                onChange={(e) =>
+                onChange={e =>
                   setType(e.target.value as 'ChromaStore' | 'QdrantStore')
                 }
                 disabled={isLoading}
@@ -265,9 +276,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                     Copy strategies from
                   </label>
                   <select
-                    className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                    className="w-full mt-1 bg-transparent rounded-lg py-2 pl-3 pr-10 border border-input text-foreground appearance-none"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.75rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                    }}
                     value={copyFromDb}
-                    onChange={(e) => {
+                    onChange={e => {
                       setCopyFromDb(e.target.value)
                       // Reset default strategy selections when changing source
                       if (e.target.value === 'none') {
@@ -278,7 +295,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                     disabled={isLoading}
                   >
                     <option value="none">None</option>
-                    {existingDatabases.map((db) => (
+                    {existingDatabases.map(db => (
                       <option key={db.name} value={db.name}>
                         {db.name}
                       </option>
@@ -298,13 +315,19 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                       Default embedding strategy
                     </label>
                     <select
-                      className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                      className="w-full mt-1 bg-transparent rounded-lg py-2 pl-3 pr-10 border border-input text-foreground appearance-none"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                        backgroundPosition: 'right 0.75rem center',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: '1.5em 1.5em',
+                      }}
                       value={defaultEmbedding}
-                      onChange={(e) => setDefaultEmbedding(e.target.value)}
+                      onChange={e => setDefaultEmbedding(e.target.value)}
                       disabled={isLoading}
                     >
                       <option value="">Select a strategy</option>
-                      {availableEmbeddings.map((emb) => (
+                      {availableEmbeddings.map(emb => (
                         <option key={emb.name} value={emb.name}>
                           {emb.name}
                         </option>
@@ -319,13 +342,19 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                       Default retrieval strategy
                     </label>
                     <select
-                      className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                      className="w-full mt-1 bg-transparent rounded-lg py-2 pl-3 pr-10 border border-input text-foreground appearance-none"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                        backgroundPosition: 'right 0.75rem center',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: '1.5em 1.5em',
+                      }}
                       value={defaultRetrieval}
-                      onChange={(e) => setDefaultRetrieval(e.target.value)}
+                      onChange={e => setDefaultRetrieval(e.target.value)}
                       disabled={isLoading}
                     >
                       <option value="">Select a strategy</option>
-                      {availableRetrievals.map((ret) => (
+                      {availableRetrievals.map(ret => (
                         <option key={ret.name} value={ret.name}>
                           {ret.name}
                         </option>
@@ -349,12 +378,18 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                     Assign these datasets to:
                   </label>
                   <select
-                    className="w-full mt-1 bg-transparent rounded-lg py-2 px-3 border border-input text-foreground"
+                    className="w-full mt-1 bg-transparent rounded-lg py-2 pl-3 pr-10 border border-input text-foreground appearance-none"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.75rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                    }}
                     value={reassignToDb}
-                    onChange={(e) => setReassignToDb(e.target.value)}
+                    onChange={e => setReassignToDb(e.target.value)}
                     disabled={isLoading || otherDatabases.length === 0}
                   >
-                    {otherDatabases.map((db) => (
+                    {otherDatabases.map(db => (
                       <option key={db.name} value={db.name}>
                         {db.name}
                       </option>
@@ -362,7 +397,8 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                   </select>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Affected datasets: {affectedDatasets.map((d) => d.name).join(', ')}
+                  Affected datasets:{' '}
+                  {affectedDatasets.map(d => d.name).join(', ')}
                 </p>
               </>
             ) : (
@@ -397,8 +433,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                 className="px-3 py-2 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 text-sm disabled:opacity-50"
                 onClick={handleConfirmDelete}
                 disabled={
-                  isLoading ||
-                  (affectedDatasets.length > 0 && !reassignToDb)
+                  isLoading || (affectedDatasets.length > 0 && !reassignToDb)
                 }
                 type="button"
               >
@@ -443,4 +478,3 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 }
 
 export default DatabaseModal
-
