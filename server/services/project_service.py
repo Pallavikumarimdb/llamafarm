@@ -1,8 +1,16 @@
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Union
 
+from config import (  # noqa: E402
+    ConfigError,
+    generate_base_config,
+    load_config,
+    load_config_dict,
+    save_config,
+)
+from config.datamodel import LlamaFarmConfig  # noqa: E402
 from pydantic import BaseModel, ValidationError
 
 from api.errors import (
@@ -15,15 +23,6 @@ from api.errors import (
 from core.logging import FastAPIStructLogger
 from core.settings import settings
 
-from config import (  # noqa: E402
-    ConfigError,
-    generate_base_config,
-    load_config,
-    load_config_dict,
-    save_config,
-)
-from config.datamodel import LlamaFarmConfig  # noqa: E402
-
 logger = FastAPIStructLogger()
 
 RESERVED_NAMESPACES = ["llamafarm"]
@@ -32,7 +31,7 @@ RESERVED_NAMESPACES = ["llamafarm"]
 class Project(BaseModel):
     namespace: str
     name: str
-    config: Union[LlamaFarmConfig, dict]
+    config: LlamaFarmConfig | dict
     validation_error: str | None = None
     last_modified: datetime | None = None
 
@@ -505,3 +504,155 @@ class ProjectService:
         cfg_model = LlamaFarmConfig(**config_dict)
 
         return cls.save_config(namespace, project_id, cfg_model)
+
+    @classmethod
+    def delete_project(cls, namespace: str, project_id: str) -> Project:
+        """
+        Delete a project and all its associated resources.
+
+        This method performs a complete cleanup of the project including:
+        - All datasets associated with the project
+        - All chat sessions
+        - All data files (raw, metadata, and indexes)
+        - The entire project directory
+
+        Args:
+            namespace: The namespace of the project
+            project_id: The project identifier
+
+        Returns:
+            Project: The deleted project information
+
+        Raises:
+            ProjectNotFoundError: If the project doesn't exist
+            PermissionError: If there are permission issues deleting files
+            OSError: If there are filesystem errors during deletion
+        """
+        # 1. Validate project exists and get its configuration
+        logger.info(
+            "Starting project deletion",
+            namespace=namespace,
+            project_id=project_id,
+        )
+        project = cls.get_project(namespace, project_id)
+
+        # 2. Store project info for response (before deletion)
+        project_copy = Project(
+            namespace=project.namespace,
+            name=project.name,
+            config=project.config,
+            validation_error=project.validation_error,
+            last_modified=project.last_modified,
+        )
+
+        # 3. Delete associated datasets
+        # Import here to avoid circular dependency
+        from services.dataset_service import DatasetService
+
+        try:
+            datasets = DatasetService.list_datasets(namespace, project_id)
+            logger.info(
+                f"Deleting {len(datasets)} dataset(s)",
+                namespace=namespace,
+                project_id=project_id,
+                dataset_count=len(datasets),
+            )
+            for dataset in datasets:
+                try:
+                    DatasetService.delete_dataset(namespace, project_id, dataset.name)
+                    logger.info(
+                        "Deleted dataset",
+                        namespace=namespace,
+                        project_id=project_id,
+                        dataset=dataset.name,
+                    )
+                except Exception as e:
+                    # Log but continue - we want to delete as much as possible
+                    logger.warning(
+                        "Failed to delete dataset, continuing with project deletion",
+                        namespace=namespace,
+                        project_id=project_id,
+                        dataset=dataset.name,
+                        error=str(e),
+                    )
+        except Exception as e:
+            # Log but continue even if we can't list datasets
+            logger.warning(
+                "Failed to list datasets for deletion",
+                namespace=namespace,
+                project_id=project_id,
+                error=str(e),
+            )
+
+        # 4. Delete chat sessions directory
+        project_dir = cls.get_project_dir(namespace, project_id)
+        sessions_dir = Path(project_dir) / "sessions"
+        if sessions_dir.exists():
+            try:
+                shutil.rmtree(sessions_dir, ignore_errors=False)
+                logger.info(
+                    "Deleted sessions directory",
+                    namespace=namespace,
+                    project_id=project_id,
+                    sessions_dir=str(sessions_dir),
+                )
+            except (PermissionError, OSError) as e:
+                # Log but continue - project dir deletion will handle this
+                logger.warning(
+                    "Failed to delete sessions directory",
+                    namespace=namespace,
+                    project_id=project_id,
+                    sessions_dir=str(sessions_dir),
+                    error=str(e),
+                )
+
+        # 5. Delete the entire project directory
+        project_path = Path(project_dir)
+        if project_path.exists():
+            try:
+                shutil.rmtree(project_path, ignore_errors=False)
+                logger.info(
+                    "Deleted project directory",
+                    namespace=namespace,
+                    project_id=project_id,
+                    project_dir=str(project_path),
+                )
+            except PermissionError as e:
+                logger.error(
+                    "Permission denied when deleting project directory",
+                    namespace=namespace,
+                    project_id=project_id,
+                    project_dir=str(project_path),
+                    error=str(e),
+                )
+                raise PermissionError(
+                    f"Permission denied when deleting project "
+                    f"{namespace}/{project_id}: {str(e)}"
+                ) from e
+            except OSError as e:
+                logger.error(
+                    "Filesystem error when deleting project directory",
+                    namespace=namespace,
+                    project_id=project_id,
+                    project_dir=str(project_path),
+                    error=str(e),
+                )
+                raise OSError(
+                    f"Failed to delete project directory "
+                    f"{namespace}/{project_id}: {str(e)}"
+                ) from e
+        else:
+            logger.warning(
+                "Project directory does not exist",
+                namespace=namespace,
+                project_id=project_id,
+                project_dir=str(project_path),
+            )
+
+        # 6. Return deleted project info
+        logger.info(
+            "Project deletion completed successfully",
+            namespace=namespace,
+            project_id=project_id,
+        )
+        return project_copy
