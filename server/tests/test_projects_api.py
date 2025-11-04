@@ -157,7 +157,11 @@ class TestDeleteProjectAPI:
     def test_delete_project_with_sessions_via_api(
         self, client, temp_data_dir, mock_config
     ):
-        """Test that deleting a project via API removes sessions."""
+        """Test that deleting a project via API removes both disk and in-memory sessions."""
+        from unittest.mock import MagicMock
+
+        from api.routers.projects import projects
+        
         with patch("core.settings.settings.lf_data_dir", temp_data_dir):
             # Create project with session
             namespace = "test_ns"
@@ -166,13 +170,26 @@ class TestDeleteProjectAPI:
             os.makedirs(project_dir, exist_ok=True)
             ProjectService.save_config(namespace, project_id, mock_config)
 
-            # Create session
+            # Create session directory on disk
             sessions_dir = Path(project_dir) / "sessions" / "session_123"
             sessions_dir.mkdir(parents=True, exist_ok=True)
             (sessions_dir / "history.json").write_text('{"messages": []}')
 
-            # Verify session exists
+            # Create in-memory session record
+            session_key = "test_ns:test_proj_sessions:session_123"
+            mock_agent = MagicMock()
+            projects.agent_sessions[session_key] = projects.SessionRecord(
+                namespace=namespace,
+                project_id=project_id,
+                agent=mock_agent,
+                created_at=0.0,
+                last_used=0.0,
+                request_count=1,
+            )
+
+            # Verify session exists on disk and in memory
             assert sessions_dir.exists()
+            assert session_key in projects.agent_sessions
 
             # Delete project via API
             response = client.delete(f"/v1/projects/{namespace}/{project_id}")
@@ -180,9 +197,10 @@ class TestDeleteProjectAPI:
             # Verify success
             assert response.status_code == 200
 
-            # Verify project and sessions are gone
+            # Verify project and sessions are gone (both disk and memory)
             assert not os.path.exists(project_dir)
             assert not sessions_dir.exists()
+            assert session_key not in projects.agent_sessions
 
     def test_delete_project_with_data_via_api(
         self, client, temp_data_dir, mock_config

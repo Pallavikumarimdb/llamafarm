@@ -233,6 +233,19 @@ async def delete_project(namespace: str, project_id: str):
         # Call the delete_project method in ProjectService
         deleted_project = ProjectService.delete_project(namespace, project_id)
         
+        # Clean up in-memory chat sessions to prevent memory leak
+        with _agent_sessions_lock:
+            session_count = _delete_all_sessions(namespace, project_id)
+            if session_count > 0:
+                from core.logging import FastAPIStructLogger
+                logger = FastAPIStructLogger()
+                logger.info(
+                    "Cleared in-memory chat sessions during project deletion",
+                    namespace=namespace,
+                    project_id=project_id,
+                    session_count=session_count,
+                )
+        
         # Convert the Project object to the API response format
         project = Project(
             namespace=deleted_project.namespace,
