@@ -537,16 +537,18 @@ class ProjectService:
         )
 
         # This will raise ProjectNotFoundError if project doesn't exist
-        project = cls.get_project(namespace, project_id)
+        # Use get_project_safe to allow deleting projects with invalid configs
+        safe_project = cls.get_project_safe(namespace, project_id)
 
         # Step 2: Store project info for response (before deletion)
         # Create a copy to return after deletion
+        # Use validated config if available, otherwise use raw dict
         project_copy = Project(
-            namespace=project.namespace,
-            name=project.name,
-            config=project.config,
-            validation_error=project.validation_error,
-            last_modified=project.last_modified,
+            namespace=safe_project.namespace,
+            name=safe_project.name,
+            config=safe_project.config if safe_project.config is not None else safe_project.config_dict,
+            validation_error=safe_project.validation_error,
+            last_modified=safe_project.last_modified,
         )
 
         # Step 3: Delete the entire project directory
