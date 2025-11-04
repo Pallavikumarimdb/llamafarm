@@ -1,8 +1,16 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Message from './Message'
 import FontIcon from '../../common/FontIcon'
 import { useChatbox } from '../../hooks/useChatbox'
 import { useActiveProject } from '../../hooks/useActiveProject'
+import { useMobileView } from '../../contexts/MobileViewContext'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../ui/tooltip'
 
 interface ChatboxProps {
   isPanelOpen: boolean
@@ -15,6 +23,8 @@ function Chatbox({
   setIsPanelOpen,
   initialMessage,
 }: ChatboxProps) {
+  const navigate = useNavigate()
+  const { isMobile } = useMobileView()
   const [isDiagnosing, setIsDiagnosing] = useState<boolean>(false)
   const [hasProcessedInitialMessage, setHasProcessedInitialMessage] =
     useState(false)
@@ -160,35 +170,79 @@ function Chatbox({
   }, [sendMessage, updateInput, setIsPanelOpen, composeDiagnoseMessage])
 
   return (
-    <div className="w-full h-full flex flex-col transition-colors bg-card text-foreground">
-      <div
-        className={`relative flex ${isPanelOpen ? 'justify-between items-center mr-1 mt-1' : 'justify-center mt-3'}`}
-      >
-        <div className="flex items-center gap-2">
-          {isPanelOpen && (
-            <button
-              onClick={handleClearChat}
-              disabled={isClearing}
-              className="text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isClearing ? 'Clearing...' : 'Clear'}
-            </button>
-          )}
-        </div>
+    <TooltipProvider>
+      <div className="w-full h-full flex flex-col transition-colors bg-card text-foreground">
+        {isPanelOpen && (
+          <div className="px-4 pt-3 pb-2 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FontIcon
+                  type="build-assistant"
+                  className="w-5 h-5 text-foreground"
+                />
+                <span className="text-base font-medium">
+                  {isMobile ? 'Build chat' : 'Build assistant'}
+                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button className="inline-flex items-center">
+                      <FontIcon type="info" className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[280px]">
+                    <p>
+                      This chat helps you build and configure your project. To test your AI project outputs, open the{' '}
+                      <button
+                        onClick={() => navigate('/chat/test')}
+                        className="text-primary underline hover:opacity-80"
+                      >
+                        Test tab
+                      </button>
+                      .
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleClearChat}
+                  disabled={isClearing}
+                  className="text-xs px-2 py-1 rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isClearing ? 'Clearing...' : 'Clear'}
+                </button>
+                <div className="hidden md:flex md:items-center">
+                  <FontIcon
+                    isButton
+                    type="close-panel"
+                    className="w-6 h-6 text-primary hover:opacity-80"
+                    handleOnClick={() => setIsPanelOpen(false)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {!isPanelOpen && (
+          <div className="relative flex justify-center mt-3">
+            <div className="hidden md:block">
+              <FontIcon
+                isButton
+                type="open-panel"
+                className="w-6 h-6 text-primary hover:opacity-80"
+                handleOnClick={() => setIsPanelOpen(true)}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Centered project title on mobile */}
-        <span className="md:hidden absolute left-1/2 -translate-x-1/2 text-sm text-muted-foreground truncate max-w-[60vw] pointer-events-none">
-          {activeProjectName}
-        </span>
-        {/* Hide collapse toggle on mobile when chat is full-screen */}
-        <div className="hidden md:block">
-          <FontIcon
-            isButton
-            type={isPanelOpen ? 'close-panel' : 'open-panel'}
-            className="w-6 h-6 text-primary hover:opacity-80"
-            handleOnClick={() => setIsPanelOpen(!isPanelOpen)}
-          />
-        </div>
-      </div>
+        {isPanelOpen && (
+          <span className="md:hidden absolute left-1/2 top-3 -translate-x-1/2 text-sm text-muted-foreground truncate max-w-[60vw] pointer-events-none z-10">
+            {activeProjectName}
+          </span>
+        )}
       {isDiagnosing && (
         <div className="mx-4 mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
@@ -337,7 +391,8 @@ function Chatbox({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }
 
