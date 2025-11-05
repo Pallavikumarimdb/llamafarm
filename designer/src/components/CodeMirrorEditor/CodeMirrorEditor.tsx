@@ -23,27 +23,33 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
   onDiscard,
   isDirty = false,
   isSaving = false,
-  saveError = null
+  saveError = null,
+  onEditorReady,
 }) => {
   const activeProject = useActiveProject()
 
   // Use the extracted CodeMirror hook
-  const {
-    editorRef,
-    isLoading,
-    isInitialized,
-    error
-  } = useCodeMirror(content, {
-    readOnly,
-    language,
-    theme,
-    onChange
-  })
+  const { editorRef, isLoading, isInitialized, error, navigationAPI } =
+    useCodeMirror(content, {
+      readOnly,
+      language,
+      theme,
+      onChange,
+    })
+
+  // Notify parent when navigation API is ready
+  React.useEffect(() => {
+    if (navigationAPI && onEditorReady) {
+      onEditorReady(navigationAPI)
+    }
+  }, [navigationAPI, onEditorReady])
 
   // Show loading state while CodeMirror modules are loading
   if (isLoading) {
     return (
-      <div className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}>
+      <div
+        className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}
+      >
         <EditorToolbar
           activeProject={activeProject}
           readOnly={readOnly}
@@ -58,7 +64,9 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Loader className="w-8 h-8" />
-            <span className="text-sm text-muted-foreground">Loading code editor...</span>
+            <span className="text-sm text-muted-foreground">
+              Loading code editor...
+            </span>
           </div>
         </div>
       </div>
@@ -68,7 +76,9 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
   // Show error state if CodeMirror failed to load
   if (error) {
     return (
-      <div className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}>
+      <div
+        className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}
+      >
         <EditorToolbar
           activeProject={activeProject}
           readOnly={readOnly}
@@ -85,7 +95,7 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
             <div className="w-16 h-16 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
               <FontIcon type="info" className="w-8 h-8 text-destructive" />
             </div>
-            
+
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-foreground">
                 Editor Failed to Load
@@ -111,7 +121,9 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
   }
 
   return (
-    <div className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}>
+    <div
+      className={`w-full h-full max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}
+    >
       <EditorToolbar
         activeProject={activeProject}
         readOnly={readOnly}
@@ -124,13 +136,8 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
 
       {/* Editor container with fallback */}
       <div className="flex-1 min-h-0 relative">
-        <EditorContent
-          editorRef={editorRef}
-        />
-        <EditorFallback
-          content={content}
-          isInitialized={isInitialized}
-        />
+        <EditorContent editorRef={editorRef} />
+        <EditorFallback content={content} isInitialized={isInitialized} />
       </div>
     </div>
   )

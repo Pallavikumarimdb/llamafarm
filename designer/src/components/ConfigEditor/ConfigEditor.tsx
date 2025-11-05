@@ -6,8 +6,10 @@ import { useTheme } from '../../contexts/ThemeContext'
 import yaml from 'yaml'
 import ConfigLoading from './ConfigLoading'
 import ConfigError from './ConfigError'
+import ConfigTableOfContents from './ConfigTableOfContents'
 import Loader from '../../common/Loader'
 import FontIcon from '../../common/FontIcon'
+import type { EditorNavigationAPI } from '../../types/config-toc'
 
 // Lazy load the CodeMirror editor
 const CodeMirrorEditor = lazy(
@@ -31,6 +33,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
   const [editedContent, setEditedContent] = useState<string>(formattedConfig)
   const [isDirty, setIsDirty] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [navigationAPI, setNavigationAPI] = useState<EditorNavigationAPI | null>(null)
 
   // Update edited content when formatted config changes
   // Guard: Don't reset if user has unsaved changes
@@ -152,58 +155,72 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
   }
 
   return (
-    <Suspense
-      fallback={
-        <div
-          className={`config-editor w-full h-full min-h-0 max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col ${className}`}
-        >
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-border bg-card flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FontIcon type="code" className="w-4 h-4 text-foreground" />
-                <h2 className="text-sm font-semibold text-foreground">
-                  Project Configuration
-                </h2>
-                <span className="text-xs text-muted-foreground">
-                  ({activeProject?.project || 'No project'})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  Loading editor...
-                </span>
-              </div>
-            </div>
-          </div>
+    <div className={`flex flex-row h-full w-full overflow-hidden ${className}`}>
+      {/* TOC Panel - hidden on mobile */}
+      <div className="hidden md:block w-[240px] flex-shrink-0 h-full overflow-hidden">
+        <ConfigTableOfContents
+          configContent={editedContent}
+          navigationAPI={navigationAPI}
+          shouldUpdate={!isDirty}
+        />
+      </div>
 
-          {/* Loading editor */}
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <Loader className="w-8 h-8" />
-              <span className="text-sm text-muted-foreground">
-                Loading code editor...
-              </span>
+      {/* Editor Panel */}
+      <div className="flex-1 min-w-0 h-full">
+        <Suspense
+          fallback={
+            <div className="config-editor w-full h-full min-h-0 max-h-full rounded-lg bg-card border border-border overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-border bg-card flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FontIcon type="code" className="w-4 h-4 text-foreground" />
+                    <h2 className="text-sm font-semibold text-foreground">
+                      Project Configuration
+                    </h2>
+                    <span className="text-xs text-muted-foreground">
+                      ({activeProject?.project || 'No project'})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      Loading editor...
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Loading editor */}
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader className="w-8 h-8" />
+                  <span className="text-sm text-muted-foreground">
+                    Loading code editor...
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      }
-    >
-      <CodeMirrorEditor
-        content={editedContent}
-        className={`w-full h-full min-h-0 ${className}`}
-        language="yaml"
-        theme={theme}
-        readOnly={false}
-        onChange={handleChange}
-        onSave={handleSave}
-        onDiscard={handleDiscard}
-        isDirty={isDirty}
-        isSaving={updateProject.isPending}
-        saveError={saveError}
-      />
-    </Suspense>
+          }
+        >
+          <CodeMirrorEditor
+            content={editedContent}
+            className="w-full h-full min-h-0"
+            language="yaml"
+            theme={theme}
+            readOnly={false}
+            onChange={handleChange}
+            onSave={handleSave}
+            onDiscard={handleDiscard}
+            isDirty={isDirty}
+            isSaving={updateProject.isPending}
+            saveError={saveError}
+            onEditorReady={setNavigationAPI}
+          />
+        </Suspense>
+      </div>
+    </div>
   )
 }
 
 export default ConfigEditor
+

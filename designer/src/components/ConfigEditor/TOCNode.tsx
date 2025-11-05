@@ -1,0 +1,96 @@
+import React, { useState } from 'react'
+import FontIcon from '../../common/FontIcon'
+import type { TOCNode as TOCNodeType } from '../../types/config-toc'
+
+interface TOCNodeProps {
+  node: TOCNodeType
+  onNavigate: (node: TOCNodeType) => void
+  defaultCollapsed?: boolean
+  isActive?: boolean
+  activeNodeId?: string | null
+}
+
+/**
+ * Individual tree node component for the config table of contents
+ * Supports collapse/expand and nested children
+ */
+const TOCNode: React.FC<TOCNodeProps> = ({ 
+  node, 
+  onNavigate, 
+  defaultCollapsed = false,
+  isActive = false,
+  activeNodeId = null
+}) => {
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed)
+  const hasChildren = node.children && node.children.length > 0
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    // Only trigger navigation (don't toggle collapse on main click)
+    onNavigate(node)
+  }
+
+  const handleCaretClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    // Only toggle collapse, don't trigger navigation
+    setIsCollapsed(!isCollapsed)
+  }
+
+  const indent = node.level * 12 // 12px per level
+
+  return (
+    <div className="toc-node">
+      <button
+        onClick={handleClick}
+        className={`w-full flex items-center gap-2 py-2 px-3 text-sm text-left transition-colors ${
+          isActive 
+            ? 'bg-primary/10 text-primary border-l-2 border-primary' 
+            : 'hover:bg-accent hover:text-accent-foreground'
+        } ${node.level === 0 ? 'font-medium' : ''}`}
+        style={{ paddingLeft: `${indent + 12}px` }}
+        title={`Jump to ${node.label}`}
+      >
+        {/* Collapse/expand caret - only for collapsible items */}
+        {hasChildren && node.isCollapsible ? (
+          <span
+            onClick={handleCaretClick}
+            className="flex-shrink-0 cursor-pointer hover:text-primary flex items-center justify-center w-4 h-4"
+            aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+            role="button"
+            tabIndex={0}
+          >
+            <FontIcon
+              type="chevron-down"
+              className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+            />
+          </span>
+        ) : (
+          <span className="w-4" />
+        )}
+
+        {/* Label */}
+        <span className="flex-1 truncate">{node.label}</span>
+      </button>
+
+      {/* Render children if not collapsed */}
+      {hasChildren && !isCollapsed && (
+        <div className="toc-children">
+          {node.children!.map((child) => (
+            <TOCNode
+              key={child.id}
+              node={child}
+              onNavigate={onNavigate}
+              defaultCollapsed={child.level === 1 && child.isCollapsible}
+              isActive={activeNodeId === child.id}
+              activeNodeId={activeNodeId}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default TOCNode
+

@@ -6,12 +6,13 @@ import type {
   UseCodeMirrorReturn,
   CodeMirrorConfig,
 } from '../types/codemirror'
+import type { EditorNavigationAPI } from '../types/config-toc'
 
 // Dynamic imports for CodeMirror packages
 const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
   const [
-    { EditorView, lineNumbers, keymap },
-    { EditorState, StateEffect },
+    { EditorView, lineNumbers, keymap, Decoration },
+    { EditorState, StateEffect, StateField },
     { json },
     { yaml },
     { defaultKeymap },
@@ -43,6 +44,8 @@ const loadCodeMirrorModules = async (): Promise<CodeMirrorModules> => {
     keymap,
     EditorState,
     StateEffect,
+    StateField,
+    Decoration,
     json,
     yaml,
     defaultKeymap,
@@ -116,6 +119,42 @@ export function useCodeMirror(
     }
   }, [])
 
+  // Create a persistent StateField for managing highlights
+  const highlightEffects = useMemo(() => {
+    if (!modules) return null
+
+    // Effect to add a highlight
+    const addHighlight = modules.StateEffect.define<{
+      from: number
+      to: number
+    }>()
+    // Effect to clear highlights
+    const clearHighlight = modules.StateEffect.define()
+
+    // StateField to manage highlight decorations
+    const highlightField = modules.StateField.define({
+      create: () => modules.Decoration.none,
+      update: (decorations: any, tr: any) => {
+        // Check for our custom effects
+        for (const effect of tr.effects) {
+          if (effect.is(addHighlight)) {
+            const mark = modules.Decoration.mark({ class: 'cm-toc-highlight' })
+            const decoration = mark.range(effect.value.from, effect.value.to)
+            return modules.Decoration.set([decoration])
+          }
+          if (effect.is(clearHighlight)) {
+            return modules.Decoration.none
+          }
+        }
+        // Map decorations through document changes
+        return decorations.map(tr.changes)
+      },
+      provide: (f: any) => modules.EditorView.decorations.from(f),
+    })
+
+    return { highlightField, addHighlight, clearHighlight }
+  }, [modules])
+
   // Create extensions configuration
   const createExtensions = useMemo(() => {
     if (!modules) return []
@@ -136,6 +175,11 @@ export function useCodeMirror(
     } = modules
 
     const extensions = []
+
+    // Add the persistent highlight field first
+    if (highlightEffects) {
+      extensions.push(highlightEffects.highlightField)
+    }
 
     // We provide our own theme and highlight styles for both modes to ensure
     // consistent, non-red/green-forward palettes. Avoid pushing oneDark so its
@@ -229,12 +273,14 @@ export function useCodeMirror(
 
     // Add onChange listener if provided
     if (defaultConfig.onChange && !defaultConfig.readOnly) {
-      const updateListener = modules.EditorView.updateListener.of((update: any) => {
-        if (update.docChanged) {
-          const newContent = update.state.doc.toString()
-          defaultConfig.onChange!(newContent)
+      const updateListener = modules.EditorView.updateListener.of(
+        (update: any) => {
+          if (update.docChanged) {
+            const newContent = update.state.doc.toString()
+            defaultConfig.onChange!(newContent)
+          }
         }
-      })
+      )
       extensions.push(updateListener)
     }
 
@@ -251,7 +297,8 @@ export function useCodeMirror(
               : 'hsl(var(--background))',
         },
         '.cm-content': {
-          padding: '20px 20px 40px 20px', // Add extra bottom padding to show last line
+          padding: '20px 20px 20px 20px',
+          paddingBottom: 'calc(100vh - 200px)', // Enough padding so last line can scroll to top
           minHeight: '100%',
           caretColor: defaultConfig.theme === 'dark' ? '#ffffff' : '#000000',
           backgroundColor:
@@ -284,7 +331,6 @@ export function useCodeMirror(
               : '#cbd5e1 #f8fafc',
           padding: '0',
           margin: '0',
-          paddingBottom: '20px', // Extra space at bottom to ensure last line visibility
         },
         '.cm-gutters': {
           paddingRight: '8px',
@@ -332,7 +378,7 @@ export function useCodeMirror(
     )
 
     return extensions
-  }, [modules, defaultConfig])
+  }, [modules, defaultConfig, highlightEffects])
 
   // Initialize CodeMirror editor
   useEffect(() => {
@@ -440,6 +486,105 @@ export function useCodeMirror(
     }
   }, [])
 
+  // Navigation API for TOC and other components
+  const navigationAPI: EditorNavigationAPI | null = useMemo(() => {
+    if (!viewRef.current || !isInitialized || !modules) return null
+
+    return {
+      scrollToLine: (lineNumber: number) => {
+        const view = viewRef.current?.view
+        if (!view) return
+
+        try {
+          // Get the line (1-indexed input)
+          const lineNum = Math.max(
+            1,
+            Math.min(lineNumber, view.state.doc.lines)
+          )
+          const line = view.state.doc.line(lineNum)
+          const pos = line.from
+
+          // Combine scroll and selection in one dispatch for smoother behavior
+          view.dispatch({
+            selection: { anchor: pos },
+            effects: modules.EditorView.scrollIntoView(pos, {
+              y: 'start',
+              yMargin: 20,
+            }),
+            scrollIntoView: true,
+          })
+
+          // Force a second scroll after a brief delay to ensure it reaches the top
+          setTimeout(() => {
+            if (viewRef.current?.view) {
+              const v = viewRef.current.view
+              const l = v.state.doc.line(lineNum)
+              v.dispatch({
+                effects: modules.EditorView.scrollIntoView(l.from, {
+                  y: 'start',
+                  yMargin: 20,
+                }),
+              })
+            }
+          }, 50)
+        } catch (err) {
+          console.error('Failed to scroll to line:', err)
+        }
+      },
+
+      highlightLines: (start: number, end: number, duration = 2500) => {
+        const view = viewRef.current?.view
+        if (!view || !modules || !highlightEffects) return
+
+        // Convert 1-indexed to 0-indexed
+        const startLine = Math.max(1, start)
+        const endLine = Math.max(startLine, end)
+
+        try {
+          const fromPos = view.state.doc.line(startLine).from
+          const toPos = view.state.doc.line(
+            Math.min(endLine, view.state.doc.lines)
+          ).to
+
+          // Add highlight using our persistent StateField
+          view.dispatch({
+            effects: highlightEffects.addHighlight.of({
+              from: fromPos,
+              to: toPos,
+            }),
+          })
+
+          // Clear highlight after duration (let CSS animation complete)
+          setTimeout(() => {
+            if (viewRef.current?.view && highlightEffects) {
+              viewRef.current.view.dispatch({
+                effects: highlightEffects.clearHighlight.of(null),
+              })
+            }
+          }, duration)
+        } catch (err) {
+          console.error('Failed to highlight lines:', err)
+        }
+      },
+
+      getCurrentLine: () => {
+        const view = viewRef.current?.view
+        if (!view) return 1
+
+        try {
+          // Get the current visible range
+          const { scrollTop } = view.scrollDOM
+          const lineHeight = view.defaultLineHeight
+          const approxLine = Math.floor(scrollTop / lineHeight) + 1
+
+          return Math.max(1, Math.min(approxLine, view.state.doc.lines))
+        } catch {
+          return 1
+        }
+      },
+    }
+  }, [viewRef, isInitialized, modules, highlightEffects])
+
   return {
     editorRef,
     viewRef,
@@ -449,5 +594,6 @@ export function useCodeMirror(
     modules,
     destroy,
     reconfigure,
+    navigationAPI,
   }
 }
