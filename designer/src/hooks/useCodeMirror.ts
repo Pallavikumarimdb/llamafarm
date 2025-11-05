@@ -443,7 +443,11 @@ export function useCodeMirror(
     if (viewRef.current && isInitialized) {
       const currentContent = viewRef.current.getContent()
       if (currentContent !== content) {
-        viewRef.current.setContent(content)
+        try {
+          viewRef.current.setContent(content || '')
+        } catch (err) {
+          console.error('Failed to update editor content:', err)
+        }
       }
     }
   }, [content, isInitialized])

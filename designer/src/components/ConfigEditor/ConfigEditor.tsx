@@ -203,6 +203,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
           }
         >
           <CodeMirrorEditor
+            key={`${activeProject?.namespace}-${activeProject?.project}`}
             content={editedContent}
             className="w-full h-full min-h-0"
             language="yaml"
