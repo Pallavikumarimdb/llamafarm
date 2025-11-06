@@ -16,7 +16,8 @@ const Markdown: React.FC<MarkdownProps> = ({ content, className }) => {
       rehypePlugins={[rehypeSanitize]}
       components={{
         // Style code blocks
-        code: ({ node, inline, className, children, ...props }) => {
+        code: ({ node, className, children, ...props }: any) => {
+          const inline = !className?.includes('language-')
           return inline ? (
             <code
               className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-[13px]"
