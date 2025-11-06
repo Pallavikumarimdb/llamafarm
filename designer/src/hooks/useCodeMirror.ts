@@ -184,12 +184,16 @@ export function useCodeMirror(
             })
 
             const decorationsList = ranges
-              .filter(range =>
-                typeof range?.from === 'number' && typeof range?.to === 'number' && range.to > range.from
+              .filter(
+                range =>
+                  typeof range?.from === 'number' &&
+                  typeof range?.to === 'number' &&
+                  range.to > range.from
               )
               .sort((a, b) => a.from - b.from)
               .map((range, index) => {
-                const decoration = activeIndex === index ? activeDecoration : baseDecoration
+                const decoration =
+                  activeIndex === index ? activeDecoration : baseDecoration
                 return decoration.range(range.from, range.to)
               })
 
@@ -559,12 +563,21 @@ export function useCodeMirror(
   const navigationAPI: EditorNavigationAPI | null = useMemo(() => {
     if (!viewRef.current || !isInitialized || !modules) return null
 
+    // Track active animation for cancellation
+    let activeAnimationId: number | null = null
+
     return {
       scrollToLine: (lineNumber: number) => {
         const view = viewRef.current?.view
         if (!view) return
 
         try {
+          // Cancel any existing animation
+          if (activeAnimationId !== null) {
+            cancelAnimationFrame(activeAnimationId)
+            activeAnimationId = null
+          }
+
           // Get the line (1-indexed input)
           const lineNum = Math.max(
             1,
@@ -573,31 +586,64 @@ export function useCodeMirror(
           const line = view.state.doc.line(lineNum)
           const pos = line.from
 
-          // Combine scroll and selection in one dispatch for smoother behavior
+          // Update selection immediately (cursor follows immediately)
           view.dispatch({
             selection: { anchor: pos },
-            effects: modules.EditorView.scrollIntoView(pos, {
-              y: 'start',
-              yMargin: 20,
-            }),
-            scrollIntoView: true,
           })
 
-          // Force a second scroll after a brief delay to ensure it reaches the top
-          setTimeout(() => {
-            if (viewRef.current?.view) {
-              const v = viewRef.current.view
-              const l = v.state.doc.line(lineNum)
-              v.dispatch({
-                effects: modules.EditorView.scrollIntoView(l.from, {
-                  y: 'start',
-                  yMargin: 20,
-                }),
-              })
+          // Get scroll container and calculate positions
+          const scrollContainer = view.scrollDOM
+          const startScrollTop = scrollContainer.scrollTop
+
+          // Calculate target position using CodeMirror's coordinate system
+          const lineBlock = view.lineBlockAt(pos)
+          const targetScrollTop = Math.max(0, lineBlock.top - 20) // 20px margin from top
+
+          // If already at target (or very close), no need to animate
+          if (Math.abs(startScrollTop - targetScrollTop) < 2) {
+            return
+          }
+
+          // Animation parameters
+          const duration = 350 // milliseconds
+          const startTime = performance.now()
+
+          // Ease-in-out cubic easing function
+          const easeInOutCubic = (t: number): number => {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+          }
+
+          // Animation loop
+          const animate = (currentTime: number) => {
+            const elapsed = currentTime - startTime
+            const progress = Math.min(elapsed / duration, 1)
+            const easedProgress = easeInOutCubic(progress)
+
+            // Calculate current scroll position
+            const currentScrollTop =
+              startScrollTop +
+              (targetScrollTop - startScrollTop) * easedProgress
+
+            // Apply scroll position
+            scrollContainer.scrollTop = currentScrollTop
+
+            // Continue animation if not complete
+            if (progress < 1) {
+              activeAnimationId = requestAnimationFrame(animate)
+            } else {
+              activeAnimationId = null
             }
-          }, 50)
+          }
+
+          // Start animation
+          activeAnimationId = requestAnimationFrame(animate)
         } catch (err) {
           console.error('Failed to scroll to line:', err)
+          // Cleanup animation on error
+          if (activeAnimationId !== null) {
+            cancelAnimationFrame(activeAnimationId)
+            activeAnimationId = null
+          }
         }
       },
 
@@ -676,8 +722,11 @@ export function useCodeMirror(
         }
 
         const validMatches = matches
-          .filter(match =>
-            typeof match?.from === 'number' && typeof match?.to === 'number' && match.to > match.from
+          .filter(
+            match =>
+              typeof match?.from === 'number' &&
+              typeof match?.to === 'number' &&
+              match.to > match.from
           )
           .sort((a, b) => a.from - b.from)
 
@@ -715,19 +764,83 @@ export function useCodeMirror(
         if (!view || !modules) return
 
         try {
-          const from = Math.max(0, Math.min(match.from ?? 0, view.state.doc.length))
-          const to = Math.max(from, Math.min(match.to ?? from, view.state.doc.length))
+          const from = Math.max(
+            0,
+            Math.min(match.from ?? 0, view.state.doc.length)
+          )
+          const to = Math.max(
+            from,
+            Math.min(match.to ?? from, view.state.doc.length)
+          )
 
+          // Update selection immediately
           view.dispatch({
             selection: { anchor: from, head: to },
-            effects: modules.EditorView.scrollIntoView(from, {
-              y: 'center',
-              yMargin: 80,
-            }),
-            scrollIntoView: true,
           })
+
+          // Cancel any existing animation
+          if (activeAnimationId !== null) {
+            cancelAnimationFrame(activeAnimationId)
+            activeAnimationId = null
+          }
+
+          // Get scroll container and calculate positions
+          const scrollContainer = view.scrollDOM
+          const startScrollTop = scrollContainer.scrollTop
+          const viewportHeight = scrollContainer.clientHeight
+
+          // Calculate target position - center the match in viewport
+          const matchBlock = view.lineBlockAt(from)
+          const targetScrollTop = Math.max(
+            0,
+            matchBlock.top - viewportHeight / 2 + matchBlock.height / 2
+          )
+
+          // If already at target (or very close), no need to animate
+          if (Math.abs(startScrollTop - targetScrollTop) < 2) {
+            return
+          }
+
+          // Animation parameters (same as scrollToLine)
+          const duration = 350 // milliseconds
+          const startTime = performance.now()
+
+          // Ease-in-out cubic easing function
+          const easeInOutCubic = (t: number): number => {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+          }
+
+          // Animation loop
+          const animate = (currentTime: number) => {
+            const elapsed = currentTime - startTime
+            const progress = Math.min(elapsed / duration, 1)
+            const easedProgress = easeInOutCubic(progress)
+
+            // Calculate current scroll position
+            const currentScrollTop =
+              startScrollTop +
+              (targetScrollTop - startScrollTop) * easedProgress
+
+            // Apply scroll position
+            scrollContainer.scrollTop = currentScrollTop
+
+            // Continue animation if not complete
+            if (progress < 1) {
+              activeAnimationId = requestAnimationFrame(animate)
+            } else {
+              activeAnimationId = null
+            }
+          }
+
+          // Start animation
+          activeAnimationId = requestAnimationFrame(animate)
         } catch (err) {
           console.error('Failed to reveal search match:', err)
+          // Cleanup animation on error
+          if (activeAnimationId !== null) {
+            cancelAnimationFrame(activeAnimationId)
+            activeAnimationId = null
+          }
         }
       },
 
@@ -735,7 +848,13 @@ export function useCodeMirror(
         viewRef.current?.focus()
       },
     }
-  }, [viewRef, isInitialized, modules, highlightEffects, searchHighlightEffects])
+  }, [
+    viewRef,
+    isInitialized,
+    modules,
+    highlightEffects,
+    searchHighlightEffects,
+  ])
 
   return {
     editorRef,
