@@ -36,11 +36,14 @@ import {
 } from '../../hooks/useDatasets'
 import { useProject } from '../../hooks/useProjects'
 import { useDataProcessingStrategies } from '../../hooks/useDataProcessingStrategies'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 const Data = () => {
   const [isDragging, setIsDragging] = useState(false)
   const [isDropped, setIsDropped] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -102,6 +105,19 @@ const Data = () => {
     activeProject?.namespace || '',
     activeProject?.project || ''
   )
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = findConfigPointer(
+        (projectResp as any)?.project?.config,
+        { type: 'datasets' }
+      )
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // Convert API datasets to UI format - only show real datasets from the API
   const datasets = useMemo(() => {
@@ -326,7 +342,7 @@ const Data = () => {
         <h2 className="text-2xl ">
           {mode === 'designer' ? 'Data' : 'Config editor'}
         </h2>
-        <PageActions mode={mode} onModeChange={setMode} />
+        <PageActions mode={mode} onModeChange={handleModeChange} />
       </div>
       <input
         type="file"
@@ -777,7 +793,7 @@ const Data = () => {
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-hidden pb-6">
-            <ConfigEditor className="h-full" />
+            <ConfigEditor className="h-full" initialPointer={configPointer} />
           </div>
         )}
       </div>

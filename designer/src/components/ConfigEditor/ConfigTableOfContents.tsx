@@ -16,6 +16,9 @@ interface ConfigTableOfContentsProps {
 
   /** Whether to update the TOC structure (usually when not dirty) */
   shouldUpdate?: boolean
+
+  /** Pointer for section that should be highlighted/active */
+  activePointer?: string | null
 }
 
 /**
@@ -26,6 +29,7 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
   configContent,
   navigationAPI,
   shouldUpdate = true,
+  activePointer = null,
 }) => {
   // Parse config structure
   const { nodes, success, error } = useConfigStructure(
@@ -35,9 +39,45 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
 
   // Track the active/selected node
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const activePointerRef = useRef<string | null>(null)
 
   // Track if we're in a manual navigation (to prevent auto-scroll from overriding)
   const isManualNavigating = useRef(false)
+
+  const normalisePointer = (pointer: string): string => {
+    if (!pointer || pointer === '/') return '/'
+    const trimmed = pointer.endsWith('/') ? pointer.slice(0, -1) : pointer
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
+
+  const findNodeByPointer = (nodeList: TOCNodeType[], pointer: string): TOCNodeType | null => {
+    for (const node of nodeList) {
+      if (node.jsonPointer && normalisePointer(node.jsonPointer) === pointer) {
+        return node
+      }
+      if (node.children) {
+        const found = findNodeByPointer(node.children, pointer)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const findClosestNode = (pointer: string): TOCNodeType | null => {
+    let current = pointer
+    const seen = new Set<string>()
+    while (!seen.has(current)) {
+      seen.add(current)
+      const found = findNodeByPointer(nodes, current)
+      if (found) return found
+      if (current === '/') break
+      const parts = current.split('/')
+      parts.pop()
+      current = parts.length <= 1 ? '/' : parts.join('/')
+      if (!current.startsWith('/')) current = `/${current}`
+    }
+    return null
+  }
 
   // Handle navigation to a node
   const handleNavigate = (node: TOCNodeType) => {
@@ -48,6 +88,11 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
 
     // Set as active
     setActiveNodeId(node.id)
+    if (node.jsonPointer) {
+      activePointerRef.current = normalisePointer(node.jsonPointer)
+    } else {
+      activePointerRef.current = null
+    }
 
     // Scroll to the line
     navigationAPI.scrollToLine(node.lineStart)
@@ -61,6 +106,27 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
     }, 3000) // 3 seconds: enough for scroll (500ms) + settle (2500ms)
   }
 
+  useEffect(() => {
+    if (!activePointer) {
+      activePointerRef.current = null
+      return
+    }
+
+    const pointer = normalisePointer(activePointer)
+    const node = findClosestNode(pointer)
+    if (!node) return
+
+    isManualNavigating.current = true
+    setActiveNodeId(node.id)
+    activePointerRef.current = pointer
+
+    const timeout = setTimeout(() => {
+      isManualNavigating.current = false
+    }, 3000)
+
+    return () => clearTimeout(timeout)
+  }, [activePointer, nodes])
+
   // Track scroll position and update active section
   useEffect(() => {
     if (!navigationAPI?.getCurrentLine || nodes.length === 0) return
@@ -70,6 +136,19 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
       if (isManualNavigating.current) return
 
       const currentLine = navigationAPI.getCurrentLine?.() || 1
+
+      if (activePointerRef.current) {
+        const node = findClosestNode(activePointerRef.current)
+        if (node) {
+          if (
+            currentLine >= node.lineStart &&
+            currentLine <= node.lineEnd
+          ) {
+            return
+          }
+        }
+        activePointerRef.current = null
+      }
 
       // Find which node contains the current line
       const findActiveNode = (nodeList: TOCNodeType[]): string | null => {

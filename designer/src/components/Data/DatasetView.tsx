@@ -19,6 +19,7 @@ import { Textarea } from '../ui/textarea'
 import { useToast } from '../ui/toast'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useProjectSwitchNavigation } from '../../hooks/useProjectSwitchNavigation'
+import { useProject } from '../../hooks/useProjects'
 import {
   useUploadFileToDataset,
   useProcessDataset,
@@ -30,6 +31,8 @@ import {
 import { DatasetFile } from '../../types/datasets'
 import PageActions from '../common/PageActions'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 type Dataset = {
   id: string
@@ -48,9 +51,15 @@ function DatasetView() {
   const { datasetId } = useParams()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
 
   // Get current active project for API calls
   const activeProject = useActiveProject()
+  const { data: projectResp } = useProject(
+    activeProject?.namespace || '',
+    activeProject?.project || '',
+    !!activeProject
+  )
 
   // Handle automatic navigation when project changes
   useProjectSwitchNavigation()
@@ -81,6 +90,24 @@ function DatasetView() {
     () => dataset?.name || datasetId || 'dataset',
     [dataset?.name, datasetId]
   )
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const targetName = dataset?.name || datasetId
+      const pointer = targetName
+        ? findConfigPointer(
+            (projectResp as any)?.project?.config,
+            { type: 'dataset', datasetName: targetName }
+          )
+        : findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'datasets',
+          })
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // Get current dataset from API response
   const currentApiDataset = useMemo(() => {
@@ -558,18 +585,18 @@ function DatasetView() {
             <span className="text-muted-foreground px-1">\</span>
             <span className="text-foreground">{datasetName}</span>
           </nav>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
       ) : (
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl">Config editor</h2>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
 
       {mode !== 'designer' ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConfigEditor className="h-full" />
+          <ConfigEditor className="h-full" initialPointer={configPointer} />
         </div>
       ) : (
         <>

@@ -36,6 +36,8 @@ import {
   useDatabaseManager,
   type Database as DatabaseType,
 } from '../../hooks/useDatabaseManager'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 type Database = {
   name: string
@@ -47,6 +49,7 @@ function Databases() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const activeProject = useActiveProject()
   const { data: projectResp } = useProject(
     activeProject?.namespace || '',
@@ -62,6 +65,22 @@ function Databases() {
 
   const [metaTick, setMetaTick] = useState(0)
   const [reembedOpen, setReembedOpen] = useState(false)
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = activeDatabase
+        ? findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.database',
+            databaseName: activeDatabase,
+          })
+        : findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.databases',
+          })
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // Database modal state
   const [databaseModalOpen, setDatabaseModalOpen] = useState(false)
@@ -719,7 +738,7 @@ function Databases() {
               </TooltipProvider>
             )}
           </div>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
         {mode === 'designer' && databases.length > 0 && (
           <div className="mb-2 border-b border-border">
@@ -756,7 +775,10 @@ function Databases() {
         )}
         {mode !== 'designer' ? (
           <div className="flex-1 min-h-0 overflow-hidden pb-6">
-            <ConfigEditor className="h-full" />
+            <ConfigEditor
+              className="h-full"
+              initialPointer={configPointer}
+            />
           </div>
         ) : (
           <>

@@ -29,6 +29,8 @@ import { PromptSetSelector } from './PromptSetSelector'
 import { DeviceModelsSection, type DeviceModel } from './DeviceModelsSection'
 import { CustomDownloadDialog } from './CustomDownloadDialog'
 import { DeleteDeviceModelDialog } from './DeleteDeviceModelDialog'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 interface TabBarProps {
   activeTab: string
@@ -1505,6 +1507,7 @@ const Models = () => {
   const updateProject = useUpdateProject()
   const [activeTab, setActiveTab] = useState('project')
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const [projectModels, setProjectModels] = useState<InferenceModel[]>([])
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [modelToDelete, setModelToDelete] = useState<string | null>(null)
@@ -1520,6 +1523,19 @@ const Models = () => {
   const [downloadedBytes, setDownloadedBytes] = useState(0)
   const [totalBytes, setTotalBytes] = useState(0)
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState('')
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = findConfigPointer(
+        (projectResponse as any)?.project?.config,
+        { type: 'runtime.models' }
+      )
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
+
 
   // Load models from config
   useEffect(() => {
@@ -1877,12 +1893,12 @@ const Models = () => {
         <h2 className="text-2xl">
           {mode === 'designer' ? 'Models' : 'Config editor'}
         </h2>
-        <PageActions mode={mode} onModeChange={setMode} />
+        <PageActions mode={mode} onModeChange={handleModeChange} />
       </div>
 
       {mode !== 'designer' ? (
         <div className="flex-1 min-h-0 overflow-hidden pb-6">
-          <ConfigEditor className="h-full" />
+          <ConfigEditor className="h-full" initialPointer={configPointer} />
         </div>
       ) : (
         <>

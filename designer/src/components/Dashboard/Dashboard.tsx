@@ -10,6 +10,8 @@ import { useProject } from '../../hooks/useProjects'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useListDatasets } from '../../hooks/useDatasets'
 import { useModeWithReset } from '../../hooks/useModeWithReset'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 const Dashboard = () => {
   const navigate = useNavigate()
@@ -18,6 +20,7 @@ const Dashboard = () => {
 
   // All state declarations first
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const [showValidationDetails, setShowValidationDetails] = useState(false)
   const [projectName, setProjectName] = useState<string>('Dashboard')
   // Datasets list for Data card
@@ -33,6 +36,19 @@ const Dashboard = () => {
     activeProject?.project || '',
     !!activeProject?.namespace && !!activeProject?.project
   )
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = findConfigPointer(
+        (projectDetail as any)?.project?.config,
+        { type: 'root' }
+      )
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   const { brief } = useMemo(() => {
     const cfg = (projectDetail?.project?.config || {}) as Record<string, any>
@@ -150,7 +166,7 @@ const Dashboard = () => {
               </button>
             )}
           </div>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
 
         {/* Validation Error Banner */}
@@ -222,7 +238,7 @@ const Dashboard = () => {
 
         {mode !== 'designer' ? (
           <div className="flex-1 min-h-0 overflow-hidden pb-6">
-            <ConfigEditor className="h-full" />
+            <ConfigEditor className="h-full" initialPointer={configPointer} />
           </div>
         ) : (
           <>

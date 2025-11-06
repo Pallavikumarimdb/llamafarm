@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useFormattedConfig } from '../../hooks/useFormattedConfig'
 import { useUpdateProject } from '../../hooks/useProjects'
@@ -10,6 +10,8 @@ import ConfigTableOfContents from './ConfigTableOfContents'
 import Loader from '../../common/Loader'
 import FontIcon from '../../common/FontIcon'
 import type { EditorNavigationAPI } from '../../types/config-toc'
+import { useConfigStructure } from '../../hooks/useConfigStructure'
+import type { TOCNode } from '../../types/config-toc'
 
 // Lazy load the CodeMirror editor
 const CodeMirrorEditor = lazy(
@@ -18,9 +20,26 @@ const CodeMirrorEditor = lazy(
 
 interface ConfigEditorProps {
   className?: string
+  initialPointer?: string | null
 }
 
-const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
+const normalisePointer = (pointer: string): string => {
+  if (!pointer || pointer === '/') return '/'
+  return pointer.startsWith('/') ? pointer.replace(/\/$/, '') : `/${pointer.replace(/\/$/, '')}`
+}
+
+const parentPointer = (pointer: string): string | null => {
+  if (!pointer || pointer === '/') return null
+  const parts = pointer.split('/')
+  parts.pop()
+  if (parts.length <= 1) {
+    return '/'
+  }
+  const joined = parts.join('/')
+  return joined.startsWith('/') ? joined : `/${joined}`
+}
+
+const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPointer = null }) => {
   // Get current project info using reactive hook
   const activeProject = useActiveProject()
   const { theme } = useTheme()
@@ -34,6 +53,70 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
   const [isDirty, setIsDirty] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [navigationAPI, setNavigationAPI] = useState<EditorNavigationAPI | null>(null)
+  const [pendingPointer, setPendingPointer] = useState<string | null>(null)
+  const [resolvedPointer, setResolvedPointer] = useState<string | null>(null)
+
+  const { nodes } = useConfigStructure(editedContent, !isDirty)
+
+  const pointerMap = useMemo(() => {
+    const map = new Map<string, TOCNode>()
+    const visit = (list: TOCNode[]) => {
+      list.forEach(node => {
+        if (node.jsonPointer) {
+          map.set(normalisePointer(node.jsonPointer), node)
+        }
+        if (node.children && node.children.length > 0) {
+          visit(node.children)
+        }
+      })
+    }
+    visit(nodes)
+    return map
+  }, [nodes])
+
+  useEffect(() => {
+    if (typeof initialPointer === 'string') {
+      setPendingPointer(initialPointer)
+      setResolvedPointer(null)
+    } else if (initialPointer == null) {
+      setPendingPointer(null)
+      setResolvedPointer(null)
+    }
+  }, [initialPointer])
+
+  useEffect(() => {
+    if (!navigationAPI || !pendingPointer) return
+
+    const resolveNode = (pointer: string): TOCNode | null => {
+      if (pointerMap.size === 0) return null
+      let current: string | null = normalisePointer(pointer)
+      const tried = new Set<string>()
+      while (current) {
+        if (tried.has(current)) break
+        tried.add(current)
+        const node = pointerMap.get(current)
+        if (node) return node
+        current = parentPointer(current)
+      }
+      return pointerMap.get('/') ?? null
+    }
+
+    const targetNode = resolveNode(pendingPointer)
+    if (!targetNode) {
+      return
+    }
+
+    const startLine = targetNode.lineStart || 1
+    const endLine = targetNode.lineEnd >= startLine ? targetNode.lineEnd : startLine
+
+    navigationAPI.scrollToLine(startLine)
+    navigationAPI.highlightLines(startLine, endLine, 2000)
+    const pointerToStore = targetNode.jsonPointer
+      ? normalisePointer(targetNode.jsonPointer)
+      : normalisePointer(pendingPointer)
+    setResolvedPointer(pointerToStore)
+    setPendingPointer(null)
+  }, [navigationAPI, pendingPointer, pointerMap])
 
   // Update edited content when formatted config changes
   // Guard: Don't reset if user has unsaved changes
@@ -162,6 +245,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '' }) => {
           configContent={editedContent}
           navigationAPI={navigationAPI}
           shouldUpdate={!isDirty}
+          activePointer={resolvedPointer}
         />
       </div>
 

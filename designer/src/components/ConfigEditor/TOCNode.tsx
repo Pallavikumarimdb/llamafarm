@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import FontIcon from '../../common/FontIcon'
 import type { TOCNode as TOCNodeType } from '../../types/config-toc'
 
@@ -22,11 +22,26 @@ const TOCNode: React.FC<TOCNodeProps> = ({
   activeNodeId = null
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (isActive && buttonRef.current) {
+      buttonRef.current.scrollIntoView({
+        block: 'nearest',
+        inline: 'nearest',
+        behavior: 'auto',
+      })
+    }
+  }, [isActive])
   const hasChildren = node.children && node.children.length > 0
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    // Only trigger navigation (don't toggle collapse on main click)
+
+    if (hasChildren && node.isCollapsible) {
+      setIsCollapsed(prev => !prev)
+    }
+
     onNavigate(node)
   }
 
@@ -42,10 +57,11 @@ const TOCNode: React.FC<TOCNodeProps> = ({
   return (
     <div className="toc-node">
       <button
+        ref={buttonRef}
         onClick={handleClick}
         className={`w-full flex items-center gap-2 py-2 px-3 text-sm text-left transition-colors border-l-2 ${
           isActive 
-            ? 'bg-slate-200 text-slate-600 border-slate-400 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-700' 
+            ? 'bg-slate-200 text-slate-600 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500' 
             : 'hover:bg-accent hover:text-accent-foreground border-transparent'
         } ${node.level === 0 ? 'font-medium' : ''}`}
         style={{ paddingLeft: `${indent + 12}px` }}

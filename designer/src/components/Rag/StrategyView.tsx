@@ -50,6 +50,8 @@ import {
   type ExtractorRow,
 } from '../../hooks/useRagStrategy'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 // Maximum priority value as defined in rag/schema.yaml
 const MAX_PRIORITY = 1000
@@ -59,6 +61,7 @@ function StrategyView() {
   const { strategyId } = useParams()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const activeProject = useActiveProject()
   const reIngestMutation = useReIngestDataset()
@@ -196,6 +199,26 @@ function StrategyView() {
     const found = defaultStrategies.find(s => s.id === strategyId)
     return found?.description || ''
   }, [strategyId])
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = actualStrategyName
+        ? findConfigPointer(
+            (projectResp as any)?.project?.config,
+            {
+              type: 'rag.dataProcessingStrategy',
+              strategyName: actualStrategyName,
+            }
+          )
+        : findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.dataProcessingStrategies',
+          })
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // RAG Strategy hook for parser/extractor updates - use ACTUAL name from config
   const ragStrategy = useRagStrategy(
@@ -1213,7 +1236,7 @@ function StrategyView() {
               <span className="text-muted-foreground px-1">/</span>
               <span className="text-foreground">{strategyDisplayName}</span>
             </nav>
-            <PageActions mode={mode} onModeChange={setMode} />
+            <PageActions mode={mode} onModeChange={handleModeChange} />
           </div>
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
@@ -1243,13 +1266,13 @@ function StrategyView() {
       ) : (
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl">Config editor</h2>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
 
       {mode !== 'designer' ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConfigEditor className="h-full" />
+          <ConfigEditor className="h-full" initialPointer={configPointer} />
         </div>
       ) : (
         <>

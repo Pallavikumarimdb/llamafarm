@@ -26,6 +26,9 @@ import {
 } from '../ui/dialog'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import { useActiveProject } from '../../hooks/useActiveProject'
+import { useProject } from '../../hooks/useProjects'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 import {
   STRATEGY_TYPES,
   STRATEGY_LABELS,
@@ -40,6 +43,29 @@ function RetrievalMethod() {
   const [mode, setMode] = useModeWithReset('designer')
   const [, setDefaultTick] = useState(0)
   const activeProject = useActiveProject()
+  const { data: projectResp } = useProject(
+    activeProject?.namespace || '',
+    activeProject?.project || '',
+    !!activeProject
+  )
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = strategyId
+        ? findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.database.retrieval',
+            retrievalName: strategyId,
+          })
+        : findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.databases',
+          })
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // removed unused strategyName
 
@@ -433,7 +459,7 @@ function RetrievalMethod() {
               <span className="text-muted-foreground px-1">/</span>
               <span className="text-foreground">Edit retrieval strategy</span>
             </nav>
-            <PageActions mode={mode} onModeChange={setMode} />
+            <PageActions mode={mode} onModeChange={handleModeChange} />
           </div>
 
           {/* Header */}
@@ -447,12 +473,12 @@ function RetrievalMethod() {
       ) : (
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl">Config editor</h2>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
       {mode !== 'designer' ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConfigEditor className="h-full" />
+          <ConfigEditor className="h-full" initialPointer={configPointer} />
         </div>
       ) : (
         <>

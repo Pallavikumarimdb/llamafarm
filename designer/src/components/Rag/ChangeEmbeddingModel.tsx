@@ -24,6 +24,10 @@ import {
   DialogTitle,
 } from '../ui/dialog'
 import { getClientSideSecret } from '../../utils/crypto'
+import { useActiveProject } from '../../hooks/useActiveProject'
+import { useProject } from '../../hooks/useProjects'
+import { findConfigPointer } from '../../utils/configNavigation'
+import type { Mode } from '../ModeToggle'
 
 // Helper for symmetric AES encryption using Web Crypto API
 async function encryptAPIKey(apiKey: string, secret: string) {
@@ -72,6 +76,30 @@ function ChangeEmbeddingModel() {
   const [mode, setMode] = useModeWithReset('designer')
   const { strategyId } = useParams()
   const { toast } = useToast()
+  const activeProject = useActiveProject()
+  const { data: projectResp } = useProject(
+    activeProject?.namespace || '',
+    activeProject?.project || '',
+    !!activeProject
+  )
+  const [configPointer, setConfigPointer] = useState<string | null>(null)
+
+  const handleModeChange = (nextMode: Mode) => {
+    if (nextMode === 'code') {
+      const pointer = strategyId
+        ? findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.database.embedding',
+            embeddingName: strategyId,
+          })
+        : findConfigPointer((projectResp as any)?.project?.config, {
+            type: 'rag.databases',
+          })
+      setConfigPointer(pointer)
+    } else {
+      setConfigPointer(null)
+    }
+    setMode(nextMode)
+  }
 
   // Editable strategy name loaded from list
   const [strategyName, setStrategyName] = useState<string>('')
@@ -559,7 +587,7 @@ function ChangeEmbeddingModel() {
               <span className="text-muted-foreground px-1">/</span>
               <span className="text-foreground">Edit strategy</span>
             </nav>
-            <PageActions mode={mode} onModeChange={setMode} />
+            <PageActions mode={mode} onModeChange={handleModeChange} />
           </div>
 
           {/* Header */}
@@ -621,7 +649,7 @@ function ChangeEmbeddingModel() {
       ) : (
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl">Config editor</h2>
-          <PageActions mode={mode} onModeChange={setMode} />
+          <PageActions mode={mode} onModeChange={handleModeChange} />
         </div>
       )}
 
@@ -629,7 +657,7 @@ function ChangeEmbeddingModel() {
 
       {mode !== 'designer' ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ConfigEditor className="h-full" />
+          <ConfigEditor className="h-full" initialPointer={configPointer} />
         </div>
       ) : (
         <>

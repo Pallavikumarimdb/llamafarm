@@ -42,6 +42,30 @@ export function useConfigStructure(
       }
 
       const nodes: TOCNode[] = []
+      const yamlLines = yamlContent.split('\n')
+
+      const matchesLineValue = (lineNumber: number, value: string | undefined): boolean => {
+        if (!value) return false
+        if (lineNumber <= 0 || lineNumber > yamlLines.length) return false
+        return yamlLines[lineNumber - 1].includes(value)
+      }
+
+      const findLineByNameValue = (
+        value: string | undefined,
+        startAfter: number = 0
+      ): number => {
+        if (!value) return -1
+        for (let i = Math.max(0, startAfter); i < yamlLines.length; i++) {
+          const trimmed = yamlLines[i].trim()
+          if (
+            (trimmed.startsWith('- name:') || trimmed.startsWith('name:')) &&
+            trimmed.includes(value)
+          ) {
+            return i + 1
+          }
+        }
+        return -1
+      }
 
       // Helper to get line range for a path
       const getLineRange = (
@@ -64,9 +88,8 @@ export function useConfigStructure(
 
       // Helper to find line number by searching for a key
       const findLineByKey = (key: string, startAfter: number = 0): number => {
-        const lines = yamlContent.split('\n')
-        for (let i = startAfter; i < lines.length; i++) {
-          const line = lines[i]
+        for (let i = startAfter; i < yamlLines.length; i++) {
+          const line = yamlLines[i]
           // Look for the key at the start of the line (accounting for indentation)
           if (
             line.trim().startsWith(key + ':') ||
@@ -163,18 +186,32 @@ export function useConfigStructure(
             const dbRange = getLineRange(['rag', 'databases', index])
             let dbLine = dbRange.start
 
-            // Fallback: search for database name
-            if (dbLine === 1 && db.name) {
-              dbLine = findLineByKey('name', Math.max(0, lastDbLine - 1))
-              lastDbLine = dbLine + 10
+            const isLineValid = matchesLineValue(dbLine, db?.name)
+            if (!isLineValid) {
+              const soughtLine = findLineByNameValue(
+                db?.name,
+                Math.max(0, lastDbLine - 1)
+              )
+              if (soughtLine > 0) {
+                dbLine = soughtLine
+              } else if (dbRange.start > 1) {
+                dbLine = dbRange.start
+              } else {
+                dbLine = databasesLine + 2 + index * 5
+              }
             }
+
+            lastDbLine = dbLine
 
             databaseChildren.push({
               id: `database-${index}`,
               label: db.name || `Database ${index + 1}`,
               jsonPointer: `/rag/databases/${index}`,
               lineStart: dbLine,
-              lineEnd: dbRange.end > 1 ? dbRange.end : dbLine + 15,
+              lineEnd:
+                dbRange.end > dbLine
+                  ? dbRange.end
+                  : Math.min(dbLine + 30, yamlLines.length + 1),
               level: 2,
               isCollapsible: false,
               iconType: 'database',
