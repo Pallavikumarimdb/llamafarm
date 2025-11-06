@@ -50,6 +50,21 @@ export interface EditorNavigationAPI {
 
   /** Get the currently visible line number */
   getCurrentLine?: () => number
+
+  /** Highlight search matches with optional active range */
+  highlightSearchMatches?: (
+    matches: Array<{ from: number; to: number }>,
+    activeIndex?: number | null
+  ) => void
+
+  /** Clear all search match highlights */
+  clearSearchMatches?: () => void
+
+  /** Reveal a specific search match range */
+  revealSearchMatch?: (match: { from: number; to: number }) => void
+
+  /** Focus the editor instance */
+  focusEditor?: () => void
 }
 
 export interface ConfigStructureResult {

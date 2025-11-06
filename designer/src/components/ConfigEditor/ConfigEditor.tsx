@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useFormattedConfig } from '../../hooks/useFormattedConfig'
 import { useUpdateProject } from '../../hooks/useProjects'
@@ -21,6 +21,13 @@ const CodeMirrorEditor = lazy(
 interface ConfigEditorProps {
   className?: string
   initialPointer?: string | null
+}
+
+interface SearchMatch {
+  from: number
+  to: number
+  line: number
+  preview: string
 }
 
 const normalisePointer = (pointer: string): string => {
@@ -56,6 +63,10 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
   const [pendingPointer, setPendingPointer] = useState<string | null>(null)
   const [resolvedPointer, setResolvedPointer] = useState<string | null>(null)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([])
+  const [activeMatchIndex, setActiveMatchIndex] = useState<number>(-1)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const { nodes } = useConfigStructure(editedContent, !isDirty)
 
@@ -74,6 +85,72 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
     visit(nodes)
     return map
   }, [nodes])
+
+  const findSearchMatches = useCallback((content: string, query: string): SearchMatch[] => {
+    if (!query || query.trim().length === 0) {
+      return []
+    }
+
+    const lowerContent = content.toLowerCase()
+    const lowerQuery = query.toLowerCase()
+    if (lowerQuery.length === 0) {
+      return []
+    }
+
+    const lineOffsets: number[] = [0]
+    for (let i = 0; i < content.length; i += 1) {
+      if (content[i] === '\n') {
+        lineOffsets.push(i + 1)
+      }
+    }
+
+    const findLineIndex = (position: number): number => {
+      let low = 0
+      let high = lineOffsets.length - 1
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2)
+        const offset = lineOffsets[mid]
+        if (offset === position) {
+          return mid
+        }
+        if (offset < position) {
+          low = mid + 1
+        } else {
+          high = mid - 1
+        }
+      }
+      return Math.max(0, high)
+    }
+
+    const matches: SearchMatch[] = []
+    let searchFrom = 0
+
+    while (searchFrom <= lowerContent.length - lowerQuery.length) {
+      const index = lowerContent.indexOf(lowerQuery, searchFrom)
+      if (index === -1) break
+
+      const lineIndex = findLineIndex(index)
+      const lineStart = lineOffsets[lineIndex]
+      const nextLineStart =
+        lineIndex + 1 < lineOffsets.length ? lineOffsets[lineIndex + 1] : content.length
+      const lineText = content.slice(lineStart, nextLineStart).replace(/\r?\n$/, '')
+
+      matches.push({
+        from: index,
+        to: index + query.length,
+        line: lineIndex + 1,
+        preview: lineText.trim(),
+      })
+
+      if (lowerQuery.length === 0) {
+        break
+      }
+
+      searchFrom = index + Math.max(lowerQuery.length, 1)
+    }
+
+    return matches
+  }, [])
 
   useEffect(() => {
     if (typeof initialPointer === 'string') {
@@ -128,6 +205,21 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
     }
   }, [formattedConfig, isDirty])
 
+  useEffect(() => {
+    const handleGlobalFind = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        if (searchInputRef.current) {
+          searchInputRef.current.focus()
+          searchInputRef.current.select()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalFind)
+    return () => window.removeEventListener('keydown', handleGlobalFind)
+  }, [])
+
   // Update project mutation
   const updateProject = useUpdateProject()
 
@@ -178,6 +270,106 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
     const timeout = window.setTimeout(() => setCopyStatus('idle'), copyStatus === 'success' ? 2000 : 4000)
     return () => window.clearTimeout(timeout)
   }, [copyStatus])
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value)
+  }, [])
+
+  const handleSearchClear = useCallback(() => {
+    setSearchQuery('')
+    setSearchMatches([])
+    setActiveMatchIndex(-1)
+    navigationAPI?.clearSearchMatches?.()
+    if (searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [navigationAPI, searchInputRef])
+
+  const focusNextMatch = useCallback(() => {
+    if (searchMatches.length === 0) return
+    setActiveMatchIndex(prevIndex => {
+      if (prevIndex < 0) {
+        return 0
+      }
+      return (prevIndex + 1) % searchMatches.length
+    })
+  }, [searchMatches.length])
+
+  const focusPreviousMatch = useCallback(() => {
+    if (searchMatches.length === 0) return
+    setActiveMatchIndex(prevIndex => {
+      if (prevIndex < 0) {
+        return searchMatches.length - 1
+      }
+      return (prevIndex - 1 + searchMatches.length) % searchMatches.length
+    })
+  }, [searchMatches.length])
+
+  const handleSearchKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          focusPreviousMatch()
+        } else {
+          focusNextMatch()
+        }
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        handleSearchClear()
+      }
+    },
+    [focusNextMatch, focusPreviousMatch, handleSearchClear]
+  )
+
+  useEffect(() => {
+    const trimmedQuery = searchQuery.trim()
+    if (!trimmedQuery) {
+      setSearchMatches([])
+      setActiveMatchIndex(-1)
+      navigationAPI?.clearSearchMatches?.()
+      return
+    }
+
+    const handle = window.setTimeout(() => {
+      const matches = findSearchMatches(editedContent, trimmedQuery)
+      setSearchMatches(matches)
+      setActiveMatchIndex(prevIndex => {
+        if (matches.length === 0) {
+          return -1
+        }
+        if (prevIndex < 0) {
+          return 0
+        }
+        return Math.min(prevIndex, matches.length - 1)
+      })
+    }, 160)
+
+    return () => window.clearTimeout(handle)
+  }, [searchQuery, editedContent, findSearchMatches, navigationAPI])
+
+  useEffect(() => {
+    if (!navigationAPI) return
+
+    if (searchMatches.length === 0) {
+      navigationAPI.clearSearchMatches?.()
+      return
+    }
+
+    const ranges = searchMatches.map(match => ({ from: match.from, to: match.to }))
+    navigationAPI.highlightSearchMatches?.(
+      ranges,
+      activeMatchIndex >= 0 ? activeMatchIndex : null
+    )
+  }, [navigationAPI, searchMatches, activeMatchIndex])
+
+  useEffect(() => {
+    if (!navigationAPI) return
+    if (activeMatchIndex < 0 || activeMatchIndex >= searchMatches.length) return
+
+    const match = searchMatches[activeMatchIndex]
+    navigationAPI.revealSearchMatch?.({ from: match.from, to: match.to })
+  }, [activeMatchIndex, searchMatches, navigationAPI])
 
   // Handle save
   const handleSave = async () => {
@@ -285,6 +477,17 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
           navigationAPI={navigationAPI}
           shouldUpdate={!isDirty}
           activePointer={resolvedPointer}
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          onSearchKeyDown={handleSearchKeyDown}
+          onNavigatePrevious={focusPreviousMatch}
+          onNavigateNext={focusNextMatch}
+          onClearSearch={handleSearchClear}
+          searchInputRef={searchInputRef}
+          searchSummary={{
+            total: searchMatches.length,
+            activeIndex: activeMatchIndex,
+          }}
         />
       </div>
 

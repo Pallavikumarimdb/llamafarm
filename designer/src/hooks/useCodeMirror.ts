@@ -155,6 +155,64 @@ export function useCodeMirror(
     return { highlightField, addHighlight, clearHighlight }
   }, [modules])
 
+  const searchHighlightEffects = useMemo(() => {
+    if (!modules) return null
+
+    const setHighlights = modules.StateEffect.define<{
+      ranges: Array<{ from: number; to: number }>
+      activeIndex?: number | null
+    }>()
+    const clearHighlights = modules.StateEffect.define<null>()
+
+    const highlightField = modules.StateField.define({
+      create: () => modules.Decoration.none,
+      update: (decorations: any, tr: any) => {
+        let currentDecorations = decorations.map(tr.changes)
+
+        for (const effect of tr.effects) {
+          if (effect.is(setHighlights)) {
+            const { ranges, activeIndex = null } = effect.value
+            if (!Array.isArray(ranges) || ranges.length === 0) {
+              return modules.Decoration.none
+            }
+
+            const baseDecoration = modules.Decoration.mark({
+              class: 'cm-search-highlight',
+            })
+            const activeDecoration = modules.Decoration.mark({
+              class: 'cm-search-highlight-active',
+            })
+
+            const decorationsList = ranges
+              .filter(range =>
+                typeof range?.from === 'number' && typeof range?.to === 'number' && range.to > range.from
+              )
+              .sort((a, b) => a.from - b.from)
+              .map((range, index) => {
+                const decoration = activeIndex === index ? activeDecoration : baseDecoration
+                return decoration.range(range.from, range.to)
+              })
+
+            return modules.Decoration.set(decorationsList, true)
+          }
+
+          if (effect.is(clearHighlights)) {
+            return modules.Decoration.none
+          }
+        }
+
+        return currentDecorations
+      },
+      provide: (f: any) => modules.EditorView.decorations.from(f),
+    })
+
+    return {
+      highlightField,
+      setHighlights,
+      clearHighlights,
+    }
+  }, [modules])
+
   // Create extensions configuration
   const createExtensions = useMemo(() => {
     if (!modules) return []
@@ -179,6 +237,10 @@ export function useCodeMirror(
     // Add the persistent highlight field first
     if (highlightEffects) {
       extensions.push(highlightEffects.highlightField)
+    }
+
+    if (searchHighlightEffects) {
+      extensions.push(searchHighlightEffects.highlightField)
     }
 
     // We provide our own theme and highlight styles for both modes to ensure
@@ -378,7 +440,7 @@ export function useCodeMirror(
     )
 
     return extensions
-  }, [modules, defaultConfig, highlightEffects])
+  }, [modules, defaultConfig, highlightEffects, searchHighlightEffects])
 
   // Initialize CodeMirror editor
   useEffect(() => {
@@ -586,8 +648,82 @@ export function useCodeMirror(
           return 1
         }
       },
+
+      highlightSearchMatches: (
+        matches: Array<{ from: number; to: number }>,
+        activeIndex: number | null = null
+      ) => {
+        const view = viewRef.current?.view
+        if (!view || !modules || !searchHighlightEffects) return
+
+        if (!Array.isArray(matches) || matches.length === 0) {
+          view.dispatch({
+            effects: searchHighlightEffects.clearHighlights.of(null),
+          })
+          return
+        }
+
+        const validMatches = matches
+          .filter(match =>
+            typeof match?.from === 'number' && typeof match?.to === 'number' && match.to > match.from
+          )
+          .sort((a, b) => a.from - b.from)
+
+        if (validMatches.length === 0) {
+          view.dispatch({
+            effects: searchHighlightEffects.clearHighlights.of(null),
+          })
+          return
+        }
+
+        const clampedActive =
+          typeof activeIndex === 'number'
+            ? Math.max(0, Math.min(activeIndex, validMatches.length - 1))
+            : null
+
+        view.dispatch({
+          effects: searchHighlightEffects.setHighlights.of({
+            ranges: validMatches,
+            activeIndex: clampedActive,
+          }),
+        })
+      },
+
+      clearSearchMatches: () => {
+        const view = viewRef.current?.view
+        if (!view || !modules || !searchHighlightEffects) return
+
+        view.dispatch({
+          effects: searchHighlightEffects.clearHighlights.of(null),
+        })
+      },
+
+      revealSearchMatch: (match: { from: number; to: number }) => {
+        const view = viewRef.current?.view
+        if (!view || !modules) return
+
+        try {
+          const from = Math.max(0, Math.min(match.from ?? 0, view.state.doc.length))
+          const to = Math.max(from, Math.min(match.to ?? from, view.state.doc.length))
+
+          view.dispatch({
+            selection: { anchor: from, head: to },
+            effects: modules.EditorView.scrollIntoView(from, {
+              y: 'center',
+              yMargin: 80,
+            }),
+            scrollIntoView: true,
+          })
+        } catch (err) {
+          console.error('Failed to reveal search match:', err)
+        }
+      },
+
+      focusEditor: () => {
+        viewRef.current?.focus()
+      },
     }
-  }, [viewRef, isInitialized, modules, highlightEffects])
+  }, [viewRef, isInitialized, modules, highlightEffects, searchHighlightEffects])
 
   return {
     editorRef,

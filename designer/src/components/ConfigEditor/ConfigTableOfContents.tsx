@@ -6,6 +6,7 @@ import type {
   EditorNavigationAPI,
 } from '../../types/config-toc'
 import Loader from '../../common/Loader'
+import FontIcon from '../../common/FontIcon'
 
 interface ConfigTableOfContentsProps {
   /** YAML config content */
@@ -19,6 +20,33 @@ interface ConfigTableOfContentsProps {
 
   /** Pointer for section that should be highlighted/active */
   activePointer?: string | null
+
+  /** Search query value */
+  searchQuery?: string
+
+  /** Handler for search query changes */
+  onSearchChange?: (value: string) => void
+
+  /** Handler for search input keyboard shortcuts */
+  onSearchKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void
+
+  /** Handler for moving to previous match */
+  onNavigatePrevious?: () => void
+
+  /** Handler for moving to next match */
+  onNavigateNext?: () => void
+
+  /** Clear the search query */
+  onClearSearch?: () => void
+
+  /** Ref for the search input */
+  searchInputRef?: React.RefObject<HTMLInputElement>
+
+  /** Summary information for search results */
+  searchSummary?: {
+    total: number
+    activeIndex: number
+  }
 }
 
 /**
@@ -30,6 +58,14 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
   navigationAPI,
   shouldUpdate = true,
   activePointer = null,
+  searchQuery = '',
+  onSearchChange,
+  onSearchKeyDown,
+  onNavigatePrevious,
+  onNavigateNext,
+  onClearSearch,
+  searchInputRef,
+  searchSummary,
 }) => {
   // Parse config structure
   const { nodes, success, error } = useConfigStructure(
@@ -193,15 +229,90 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
     }
   }, [navigationAPI, nodes, activeNodeId])
 
+  const renderHeader = () => {
+    const trimmedQuery = searchQuery.trim()
+    const totalMatches = searchSummary?.total ?? 0
+    const activeIndex = searchSummary?.activeIndex ?? -1
+    const hasMatches = totalMatches > 0
+    const activeDisplay = hasMatches && activeIndex >= 0 ? activeIndex + 1 : 0
+    const summaryText = !trimmedQuery
+      ? ''
+      : hasMatches
+        ? `${activeDisplay} of ${totalMatches} matches`
+        : 'No matches found'
+
+    const disableNavigation = !hasMatches || activeIndex < 0
+    const showSummary = trimmedQuery.length > 0
+    const showNavButtons = showSummary && hasMatches
+
+    return (
+      <div className="px-4 py-4 border-b border-border bg-card flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">Contents</h3>
+        </div>
+
+        {onSearchChange && (
+          <div className="mt-3 space-y-2">
+            <div className="relative flex items-center">
+              <FontIcon type="search" className="absolute left-3 w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={event => onSearchChange(event.target.value)}
+                onKeyDown={onSearchKeyDown}
+                placeholder="Search config"
+                className="w-full pl-9 pr-9 py-2 text-xs rounded-md bg-muted border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 text-foreground placeholder:text-muted-foreground transition"
+              />
+              {trimmedQuery && onClearSearch && (
+                <button
+                  type="button"
+                  onClick={onClearSearch}
+                  className="absolute right-3 p-1.5 rounded-md text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <FontIcon type="close" className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            {showSummary && (
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{summaryText}</span>
+                <span>Enter / Shift+Enter</span>
+              </div>
+            )}
+            {showNavButtons && (
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={onNavigatePrevious}
+                  disabled={disableNavigation}
+                  className="flex-1 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous match"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={onNavigateNext}
+                  disabled={disableNavigation}
+                  className="flex-1 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Next match"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Loading or error states
   if (!success && error) {
     return (
       <div className="h-full w-full bg-card border-l border-t border-b border-border rounded-tl-lg rounded-bl-lg flex flex-col overflow-hidden">
-        <div className="px-4 py-4 border-b border-border bg-card flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">Contents</h3>
-          </div>
-        </div>
+        {renderHeader()}
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center">
             <p className="text-xs text-muted-foreground">
@@ -216,11 +327,7 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
   if (nodes.length === 0) {
     return (
       <div className="h-full w-full bg-card border-l border-t border-b border-border rounded-tl-lg rounded-bl-lg flex flex-col overflow-hidden">
-        <div className="px-4 py-4 border-b border-border bg-card flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">Contents</h3>
-          </div>
-        </div>
+        {renderHeader()}
         <div className="flex-1 flex items-center justify-center p-4">
           <Loader className="w-6 h-6" />
         </div>
@@ -231,11 +338,7 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
   return (
     <div className="h-full w-full bg-card border-l border-t border-b border-border rounded-tl-lg rounded-bl-lg flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-4 border-b border-border bg-card flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Contents</h3>
-        </div>
-      </div>
+      {renderHeader()}
 
       {/* TOC tree */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
