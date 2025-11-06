@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useFormattedConfig } from '../../hooks/useFormattedConfig'
 import { useUpdateProject } from '../../hooks/useProjects'
@@ -55,6 +55,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
   const [navigationAPI, setNavigationAPI] = useState<EditorNavigationAPI | null>(null)
   const [pendingPointer, setPendingPointer] = useState<string | null>(null)
   const [resolvedPointer, setResolvedPointer] = useState<string | null>(null)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   const { nodes } = useConfigStructure(editedContent, !isDirty)
 
@@ -139,6 +140,44 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
     setIsDirty(newContent !== formattedConfig)
     setSaveError(null) // Clear error on change
   }
+
+  const handleCopy = useCallback(async () => {
+    if (typeof editedContent !== 'string') return
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(editedContent)
+      } else if (typeof document !== 'undefined') {
+        const textarea = document.createElement('textarea')
+        textarea.value = editedContent
+        textarea.setAttribute('readonly', '')
+        textarea.style.position = 'fixed'
+        textarea.style.top = '-1000px'
+        textarea.style.left = '-1000px'
+        document.body.appendChild(textarea)
+        textarea.select()
+        const successful = document.execCommand('copy')
+        document.body.removeChild(textarea)
+        if (!successful) {
+          throw new Error('execCommand copy failed')
+        }
+      } else {
+        throw new Error('Clipboard API unavailable')
+      }
+
+      setCopyStatus('success')
+    } catch (copyError) {
+      console.error('Failed to copy config:', copyError)
+      setCopyStatus('error')
+    }
+  }, [editedContent])
+
+  useEffect(() => {
+    if (copyStatus === 'idle') return
+
+    const timeout = window.setTimeout(() => setCopyStatus('idle'), copyStatus === 'success' ? 2000 : 4000)
+    return () => window.clearTimeout(timeout)
+  }, [copyStatus])
 
   // Handle save
   const handleSave = async () => {
@@ -296,9 +335,11 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
             onChange={handleChange}
             onSave={handleSave}
             onDiscard={handleDiscard}
+            onCopy={handleCopy}
             isDirty={isDirty}
             isSaving={updateProject.isPending}
             saveError={saveError}
+            copyStatus={copyStatus}
             onEditorReady={setNavigationAPI}
           />
         </Suspense>

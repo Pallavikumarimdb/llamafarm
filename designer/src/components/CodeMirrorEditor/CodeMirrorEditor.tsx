@@ -21,9 +21,11 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
   onChange,
   onSave,
   onDiscard,
+  onCopy,
   isDirty = false,
   isSaving = false,
   saveError = null,
+  copyStatus = 'idle',
   onEditorReady,
 }) => {
   const activeProject = useActiveProject()
@@ -44,6 +46,42 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
     }
   }, [navigationAPI, onEditorReady])
 
+  const copyIconType =
+    copyStatus === 'success'
+      ? 'checkmark-filled'
+      : copyStatus === 'error'
+        ? 'info'
+        : 'copy'
+
+  const copyIconClass =
+    copyStatus === 'success'
+      ? 'w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400'
+      : copyStatus === 'error'
+        ? 'w-3.5 h-3.5 text-destructive'
+        : 'w-3.5 h-3.5 text-foreground'
+
+  const copyTitle =
+    copyStatus === 'success'
+      ? 'Configuration copied to clipboard'
+      : copyStatus === 'error'
+        ? 'Copy failed. Click to try again.'
+        : 'Copy configuration to clipboard'
+
+  const renderCopyButton = () => {
+    if (!onCopy) return null
+
+    return (
+      <button
+        onClick={onCopy}
+        className="absolute top-3 right-4 z-10 p-2 rounded-md border border-border bg-card hover:bg-muted transition-colors shadow-sm"
+        title={copyTitle}
+        aria-label={copyTitle}
+      >
+        <FontIcon type={copyIconType} className={copyIconClass} />
+      </button>
+    )
+  }
+
   // Show loading state while CodeMirror modules are loading
   if (isLoading) {
     return (
@@ -61,7 +99,8 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
         />
 
         {/* Loading content */}
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center relative">
+          {renderCopyButton()}
           <div className="flex flex-col items-center gap-3">
             <Loader className="w-8 h-8" />
             <span className="text-sm text-muted-foreground">
@@ -90,7 +129,8 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
         />
 
         {/* Error content */}
-        <div className="flex-1 flex items-center justify-center p-6">
+        <div className="flex-1 flex items-center justify-center p-6 relative">
+          {renderCopyButton()}
           <div className="max-w-md text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
               <FontIcon type="info" className="w-8 h-8 text-destructive" />
@@ -136,6 +176,7 @@ const CodeMirrorEditor: React.FC<CodeMirrorEditorProps> = ({
 
       {/* Editor container with fallback */}
       <div className="flex-1 min-h-0 relative">
+        {renderCopyButton()}
         <EditorContent editorRef={editorRef} />
         <EditorFallback content={content} isInitialized={isInitialized} />
       </div>

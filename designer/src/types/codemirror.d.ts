@@ -55,9 +55,11 @@ export interface CodeMirrorEditorProps {
   theme?: 'light' | 'dark'
   onSave?: () => void
   onDiscard?: () => void
+  onCopy?: () => void
   isDirty?: boolean
   isSaving?: boolean
   saveError?: string | null
+  copyStatus?: 'idle' | 'success' | 'error'
   onEditorReady?: (api: EditorNavigationAPI) => void
 }
 
