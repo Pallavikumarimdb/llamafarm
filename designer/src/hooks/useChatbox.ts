@@ -790,11 +790,6 @@ export function useChatbox(options: UseChatboxOptions = {}) {
                     }
                   }
 
-                  // Remove tool call messages from streaming state since they're now in persistent storage
-                  setStreamingMessages(prev =>
-                    prev.filter(msg => !msg.id.startsWith(toolCallPattern))
-                  )
-
                   // Clean up refs
                   delete accumulatedContentRef.current[assistantMessageId]
                   delete toolCallsRef.current[assistantMessageId]
@@ -805,6 +800,11 @@ export function useChatbox(options: UseChatboxOptions = {}) {
                       savedToolCallIdsRef.current.delete(savedId)
                     }
                   }
+
+                  // Remove tool call messages from streaming state since they're now in persistent storage
+                  setStreamingMessages(prev =>
+                    prev.filter(msg => !msg.id.startsWith(toolCallPattern))
+                  )
 
                   if (finalContent && finalContent.trim()) {
                     try {
