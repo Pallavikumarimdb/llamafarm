@@ -5,6 +5,7 @@ import FontIcon from '../../common/FontIcon'
 import { useChatbox } from '../../hooks/useChatbox'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useMobileView } from '../../contexts/MobileViewContext'
+import { useStickyScroll } from '../../hooks/useStickyScroll'
 import {
   Tooltip,
   TooltipContent,
@@ -51,30 +52,41 @@ function Chatbox({
   const activeProjectName = activeProject?.project || ''
   // Session list UI removed: single session per project
 
-  // Refs for auto-scroll
-  const listRef = useRef<HTMLDivElement | null>(null)
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const {
+    containerRef: listRef,
+    handleScroll,
+    maybeScrollToBottom,
+    scrollToBottom,
+    markResponseStart,
+    markStreamComplete,
+    enableFollow,
+    isFollowingRef,
+  } = useStickyScroll<HTMLDivElement>()
 
   useEffect(() => {
-    // Scroll to bottom on mount and whenever messages change
-    if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    } else if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight
+    maybeScrollToBottom(isStreaming ? 'auto' : 'smooth')
+  }, [messages, isStreaming, maybeScrollToBottom])
+
+  useEffect(() => {
+    if (!isStreaming) {
+      markStreamComplete()
     }
-  }, [messages])
+  }, [isStreaming, markStreamComplete])
 
   // Handle initial message from home page project creation
   useEffect(() => {
     if (
       initialMessage &&
       !hasProcessedInitialMessage &&
-      !hasMessages && // Only if no existing messages
-      sessionId === null // Only if no existing session
+      !hasMessages &&
+      sessionId === null
     ) {
-      // Use the existing sendMessage function - this will trigger normal session creation
       const briefKickoff = `${initialMessage}\n\nPlease answer briefly (one or two sentences).`
-      sendMessage(briefKickoff)
+      markResponseStart()
+      scrollToBottom('auto')
+      void sendMessage(briefKickoff).then(success => {
+        if (!success) markStreamComplete()
+      })
       setHasProcessedInitialMessage(true)
     }
   }, [
@@ -83,6 +95,9 @@ function Chatbox({
     hasMessages,
     sessionId,
     sendMessage,
+    markResponseStart,
+    scrollToBottom,
+    markStreamComplete,
   ])
 
   // Handle sending message
@@ -91,13 +106,25 @@ function Chatbox({
     if (!canSend || !messageContent) return
 
     // Send message using the hook
+    markResponseStart()
+    scrollToBottom('auto')
     const success = await sendMessage(messageContent)
 
     // Clear input on successful send
     if (success) {
       updateInput('')
+    } else {
+      markStreamComplete()
     }
-  }, [inputValue, canSend, sendMessage, updateInput])
+  }, [
+    inputValue,
+    canSend,
+    sendMessage,
+    updateInput,
+    markResponseStart,
+    scrollToBottom,
+    markStreamComplete,
+  ])
 
   // Handle clear chat
   const handleClearChat = useCallback(async () => {
@@ -110,6 +137,17 @@ function Chatbox({
       handleSendClick()
     }
   }
+
+  const handleInputChange = useCallback(
+    (value: string) => {
+      if (!isFollowingRef.current) {
+        enableFollow()
+        scrollToBottom('smooth')
+      }
+      updateInput(value)
+    },
+    [enableFollow, scrollToBottom, updateInput, isFollowingRef]
+  )
 
   // Compose an auto-message for diagnose intents
   const composeDiagnoseMessage = useCallback((detail: any) => {
@@ -154,8 +192,14 @@ function Chatbox({
         setIsPanelOpen(true)
         const message = composeDiagnoseMessage(detail)
         if (message && message.trim()) {
-          await sendMessage(message)
-          updateInput('')
+          markResponseStart()
+          scrollToBottom('auto')
+          const success = await sendMessage(message)
+          if (success) {
+            updateInput('')
+          } else {
+            markStreamComplete()
+          }
         }
         // keep the diagnose indicator visible briefly
         setTimeout(() => {
@@ -168,7 +212,15 @@ function Chatbox({
     window.addEventListener('lf-diagnose', onDiagnose as EventListener)
     return () =>
       window.removeEventListener('lf-diagnose', onDiagnose as EventListener)
-  }, [sendMessage, updateInput, setIsPanelOpen, composeDiagnoseMessage])
+  }, [
+    sendMessage,
+    updateInput,
+    setIsPanelOpen,
+    composeDiagnoseMessage,
+    markResponseStart,
+    scrollToBottom,
+    markStreamComplete,
+  ])
 
   return (
     <TooltipProvider>
@@ -309,6 +361,7 @@ function Chatbox({
         >
           <div
             ref={listRef}
+            onScroll={handleScroll}
             className="flex-1 overflow-y-auto flex flex-col gap-5 pr-1"
           >
             {!hasMessages ? (
@@ -338,14 +391,19 @@ function Chatbox({
                 <Message key={message.id} message={message} />
               ))
             )}
-            <div ref={endRef} />
           </div>
           <div className="flex flex-col gap-3 p-3 rounded-lg bg-secondary mt-auto sticky bottom-4">
             <div className="relative">
               <textarea
                 value={inputValue}
-                onChange={e => updateInput(e.target.value)}
+                onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onFocus={() => {
+                  if (!isFollowingRef.current) {
+                    enableFollow()
+                    scrollToBottom('smooth')
+                  }
+                }}
                 disabled={isSending}
                 className="w-full h-10 pr-10 resize-none bg-transparent border-none placeholder-opacity-60 focus:outline-none focus:ring-0 font-sans text-sm sm:text-base leading-relaxed overflow-hidden text-foreground placeholder-foreground/60 disabled:opacity-50"
                 placeholder={

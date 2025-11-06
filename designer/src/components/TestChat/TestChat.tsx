@@ -8,6 +8,7 @@ import { useStreamingChatCompletionMessage } from '../../hooks/useChatCompletion
 import { useProjectChatStreamingSession } from '../../hooks/useProjectChatSession'
 import { useProjectSession } from '../../hooks/useProjectSession'
 import { useChatbox } from '../../hooks/useChatbox'
+import { useStickyScroll } from '../../hooks/useStickyScroll'
 import { ChatStreamChunk } from '../../types/chat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -288,8 +289,16 @@ export default function TestChat({
     [USE_PROJECT_CHAT, fallbackUpdateInput]
   )
 
-  const listRef = useRef<HTMLDivElement | null>(null)
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const {
+    containerRef: listRef,
+    handleScroll,
+    maybeScrollToBottom,
+    scrollToBottom,
+    markResponseStart,
+    markStreamComplete,
+    enableFollow,
+    isFollowingRef,
+  } = useStickyScroll<HTMLDivElement>()
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const lastUserInputRef = useRef<string>('')
 
@@ -305,12 +314,8 @@ export default function TestChat({
   }, [])
 
   useEffect(() => {
-    if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    } else if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight
-    }
-  }, [messages])
+    maybeScrollToBottom(combinedIsSending ? 'auto' : 'smooth')
+  }, [messages, combinedIsSending, maybeScrollToBottom])
 
   // Resize textarea on mount and input changes
   useEffect(() => {
@@ -348,6 +353,9 @@ export default function TestChat({
     if (combinedIsSending) {
       return
     }
+
+    markResponseStart()
+    scrollToBottom('auto')
 
     if (MOCK_MODE) {
       // Local-only optimistic flow without backend
@@ -408,6 +416,7 @@ export default function TestChat({
             },
           },
         })
+        markStreamComplete()
       }, 1000)
       return
     }
@@ -492,6 +501,7 @@ export default function TestChat({
               // Persist error and clear transient bubble
               setStreamingMessage(null)
               projectSession.addMessage(`Error: ${error.message}`, 'assistant')
+              markStreamComplete()
             },
             onComplete: () => {
               if (accumulatedContent && accumulatedContent.trim()) {
@@ -499,6 +509,7 @@ export default function TestChat({
                 projectSession.addMessage(accumulatedContent, 'assistant')
               }
               setStreamingMessage(null)
+              markStreamComplete()
             },
           },
         })
@@ -523,6 +534,7 @@ export default function TestChat({
           `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
           'assistant'
         )
+        markStreamComplete()
       } finally {
         setIsProjectSending(false)
       }
@@ -531,7 +543,10 @@ export default function TestChat({
 
     // Fallback to original chat system
     const ok = await fallbackSendMessage(content)
-    if (ok) updateInput('')
+    if (ok) {
+      updateInput('')
+    }
+    markStreamComplete()
   }, [
     combinedCanSend,
     inputValue,
@@ -547,6 +562,9 @@ export default function TestChat({
     updateMessage,
     updateInput,
     fallbackSendMessage,
+    markResponseStart,
+    scrollToBottom,
+    markStreamComplete,
   ])
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = e => {
@@ -555,6 +573,17 @@ export default function TestChat({
       handleSend()
     }
   }
+
+  const handleInputChange = useCallback(
+    (value: string) => {
+      if (!isFollowingRef.current) {
+        enableFollow()
+        scrollToBottom('smooth')
+      }
+      updateInput(value)
+    },
+    [enableFollow, scrollToBottom, updateInput, isFollowingRef]
+  )
 
   // Wire lightweight global events for Retry and Use-as-prompt
   useEffect(() => {
@@ -841,7 +870,11 @@ export default function TestChat({
       )}
 
       {/* Messages */}
-      <div ref={listRef} className="flex-1 overflow-y-auto p-3 md:p-4">
+      <div
+        ref={listRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-3 md:p-4"
+      >
         <div className="flex flex-col gap-4 min-h-full pb-80">
           {!hasMessages ? (
             <EmptyState />
@@ -859,7 +892,6 @@ export default function TestChat({
               />
             ))
           )}
-          <div ref={endRef} />
         </div>
       </div>
 
@@ -868,8 +900,14 @@ export default function TestChat({
         <textarea
           ref={inputRef}
           value={inputValue}
-          onChange={e => updateInput(e.target.value)}
+          onChange={e => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => {
+            if (!isFollowingRef.current) {
+              enableFollow()
+              scrollToBottom('smooth')
+            }
+          }}
           disabled={combinedIsSending || (!MOCK_MODE && !chatParams)}
           placeholder={
             combinedIsSending
