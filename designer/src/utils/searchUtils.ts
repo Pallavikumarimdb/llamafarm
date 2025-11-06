@@ -20,9 +20,8 @@ export function findSearchMatches(content: string, query: string): SearchMatch[]
     return []
   }
 
-  const lowerContent = content.toLowerCase()
-  const lowerQuery = query.toLowerCase()
-  if (lowerQuery.length === 0) {
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (!escapedQuery) {
     return []
   }
 
@@ -52,12 +51,11 @@ export function findSearchMatches(content: string, query: string): SearchMatch[]
   }
 
   const matches: SearchMatch[] = []
-  let searchFrom = 0
+  const regex = new RegExp(escapedQuery, 'gi')
 
-  while (searchFrom <= lowerContent.length - lowerQuery.length) {
-    const index = lowerContent.indexOf(lowerQuery, searchFrom)
-    if (index === -1) break
-
+  for (const match of content.matchAll(regex)) {
+    if (!match[0]) continue
+    const index = match.index ?? 0
     const lineIndex = findLineIndex(index)
     const lineStart = lineOffsets[lineIndex]
     const nextLineStart =
@@ -66,16 +64,10 @@ export function findSearchMatches(content: string, query: string): SearchMatch[]
 
     matches.push({
       from: index,
-      to: index + query.length,
+      to: index + match[0].length,
       line: lineIndex + 1,
       preview: lineText.trim(),
     })
-
-    if (lowerQuery.length === 0) {
-      break
-    }
-
-    searchFrom = index + Math.max(lowerQuery.length, 1)
   }
 
   return matches

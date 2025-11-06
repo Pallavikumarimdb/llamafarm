@@ -45,11 +45,23 @@ const TOCNode: React.FC<TOCNodeProps> = ({
     onNavigate(node)
   }
 
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => !prev)
+  }
+
   const handleCaretClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
     // Only toggle collapse, don't trigger navigation
-    setIsCollapsed(!isCollapsed)
+    toggleCollapse()
+  }
+
+  const handleCaretKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      e.stopPropagation()
+      toggleCollapse()
+    }
   }
 
   const indent = node.level * 12 // 12px per level
@@ -71,10 +83,12 @@ const TOCNode: React.FC<TOCNodeProps> = ({
         {hasChildren && node.isCollapsible ? (
           <span
             onClick={handleCaretClick}
+            onKeyDown={handleCaretKeyDown}
             className="flex-shrink-0 cursor-pointer hover:text-primary flex items-center justify-center w-4 h-4"
             aria-label={isCollapsed ? 'Expand' : 'Collapse'}
             role="button"
             tabIndex={0}
+            aria-expanded={!isCollapsed}
           >
             <FontIcon
               type="chevron-down"

@@ -147,24 +147,29 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ className = '', initialPoin
   }
 
   const handleCopy = useCallback(async () => {
-    if (typeof editedContent !== 'string') return
+    const textToCopy = String(editedContent ?? '')
 
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(editedContent)
+        await navigator.clipboard.writeText(textToCopy)
       } else if (typeof document !== 'undefined') {
         const textarea = document.createElement('textarea')
-        textarea.value = editedContent
         textarea.setAttribute('readonly', '')
         textarea.style.position = 'fixed'
         textarea.style.top = '-1000px'
         textarea.style.left = '-1000px'
+        textarea.style.opacity = '0'
+        textarea.value = textToCopy
+
         document.body.appendChild(textarea)
-        textarea.select()
-        const successful = document.execCommand('copy')
-        document.body.removeChild(textarea)
-        if (!successful) {
-          throw new Error('execCommand copy failed')
+        try {
+          textarea.select()
+          const successful = document.execCommand('copy')
+          if (!successful) {
+            throw new Error('execCommand copy failed')
+          }
+        } finally {
+          textarea.remove()
         }
       } else {
         throw new Error('Clipboard API unavailable')

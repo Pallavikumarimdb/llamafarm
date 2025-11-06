@@ -1,6 +1,5 @@
-import { useState } from 'react'
+import { useCallback } from 'react'
 import ModeToggle from '../ModeToggle'
-import type { Mode } from '../ModeToggle'
 import { Button } from '../ui/button'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import { usePackageModal } from '../../contexts/PackageModalContext'
@@ -8,11 +7,11 @@ import Prompts from './GeneratedOutput/Prompts'
 import { useModeWithReset } from '../../hooks/useModeWithReset'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useProject } from '../../hooks/useProjects'
-import { findConfigPointer } from '../../utils/configNavigation'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 
 const Prompt = () => {
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const { openPackageModal } = usePackageModal()
   const activeProject = useActiveProject()
   const { data: projectResp } = useProject(
@@ -21,18 +20,17 @@ const Prompt = () => {
     !!activeProject?.namespace && !!activeProject?.project
   )
 
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = findConfigPointer(
-        (projectResp as any)?.project?.config,
-        { type: 'prompts' }
-      )
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
-    }
-    setMode(nextMode)
-  }
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getPromptsLocation = useCallback(
+    () => ({ type: 'prompts' as const }),
+    []
+  )
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getPromptsLocation,
+  })
 
   return (
     <div className="h-full w-full flex flex-col">

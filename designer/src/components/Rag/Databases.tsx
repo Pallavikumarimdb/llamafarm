@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FontIcon from '../../common/FontIcon'
 import { Button } from '../ui/button'
@@ -36,8 +36,8 @@ import {
   useDatabaseManager,
   type Database as DatabaseType,
 } from '../../hooks/useDatabaseManager'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 
 type Database = {
   name: string
@@ -49,7 +49,6 @@ function Databases() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const activeProject = useActiveProject()
   const { data: projectResp } = useProject(
     activeProject?.namespace || '',
@@ -65,22 +64,6 @@ function Databases() {
 
   const [metaTick, setMetaTick] = useState(0)
   const [reembedOpen, setReembedOpen] = useState(false)
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = activeDatabase
-        ? findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'rag.database',
-            databaseName: activeDatabase,
-          })
-        : findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'rag.databases',
-          })
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
-    }
-    setMode(nextMode)
-  }
 
   // Database modal state
   const [databaseModalOpen, setDatabaseModalOpen] = useState(false)
@@ -141,6 +124,23 @@ function Databases() {
     } catch {
       return 'main_database'
     }
+  })
+
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getDatabaseLocation = useCallback(() => {
+    if (activeDatabase) {
+      return {
+        type: 'rag.database' as const,
+        databaseName: activeDatabase,
+      }
+    }
+    return { type: 'rag.databases' as const }
+  }, [activeDatabase])
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getDatabaseLocation,
   })
 
   // Persist active database selection

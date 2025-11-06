@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import FontIcon from '../../common/FontIcon'
 import Loader from '../../common/Loader'
@@ -31,8 +31,8 @@ import {
 import { DatasetFile } from '../../types/datasets'
 import PageActions from '../common/PageActions'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 
 type Dataset = {
   id: string
@@ -51,7 +51,6 @@ function DatasetView() {
   const { datasetId } = useParams()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
 
   // Get current active project for API calls
   const activeProject = useActiveProject()
@@ -91,23 +90,20 @@ function DatasetView() {
     [dataset?.name, datasetId]
   )
 
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const targetName = dataset?.name || datasetId
-      const pointer = targetName
-        ? findConfigPointer(
-            (projectResp as any)?.project?.config,
-            { type: 'dataset', datasetName: targetName }
-          )
-        : findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'datasets',
-          })
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getDatasetLocation = useCallback(() => {
+    const targetName = dataset?.name || datasetId
+    if (targetName) {
+      return { type: 'dataset' as const, datasetName: targetName }
     }
-    setMode(nextMode)
-  }
+    return { type: 'datasets' as const }
+  }, [dataset?.name, datasetId])
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getDatasetLocation,
+  })
 
   // Get current dataset from API response
   const currentApiDataset = useMemo(() => {

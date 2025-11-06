@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import FontIcon from '../../common/FontIcon'
@@ -50,8 +50,8 @@ import {
   type ExtractorRow,
 } from '../../hooks/useRagStrategy'
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 
 // Maximum priority value as defined in rag/schema.yaml
 const MAX_PRIORITY = 1000
@@ -61,7 +61,6 @@ function StrategyView() {
   const { strategyId } = useParams()
   const { toast } = useToast()
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const activeProject = useActiveProject()
   const reIngestMutation = useReIngestDataset()
@@ -200,25 +199,23 @@ function StrategyView() {
     return found?.description || ''
   }, [strategyId])
 
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = actualStrategyName
-        ? findConfigPointer(
-            (projectResp as any)?.project?.config,
-            {
-              type: 'rag.dataProcessingStrategy',
-              strategyName: actualStrategyName,
-            }
-          )
-        : findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'rag.dataProcessingStrategies',
-          })
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getStrategyLocation = useCallback(() => {
+    if (actualStrategyName) {
+      return {
+        type: 'rag.dataProcessingStrategy' as const,
+        strategyName: actualStrategyName,
+      }
     }
-    setMode(nextMode)
-  }
+    return { type: 'rag.dataProcessingStrategies' as const }
+  }, [actualStrategyName])
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getStrategyLocation,
+  })
+
 
   // RAG Strategy hook for parser/extractor updates - use ACTUAL name from config
   const ragStrategy = useRagStrategy(

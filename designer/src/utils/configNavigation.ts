@@ -90,7 +90,7 @@ export const findConfigPointer = (
     case 'datasets':
       return Array.isArray((config as any).datasets) ? '/datasets' : '/'
     case 'dataset': {
-      const datasets = (config as any).datasets
+      const { datasets } = (config as any) ?? {}
       const index = findIndexByName(datasets, location.datasetName)
       return index >= 0 ? `/datasets/${index}` : findConfigPointer(config, { type: 'datasets' })
     }
@@ -101,7 +101,8 @@ export const findConfigPointer = (
         ? '/rag/data_processing_strategies'
         : findConfigPointer(config, { type: 'rag' })
     case 'rag.dataProcessingStrategy': {
-      const strategies = (config as any)?.rag?.data_processing_strategies
+      const { rag } = (config as any) ?? {}
+      const strategies = rag?.data_processing_strategies
       const index = findIndexByName(strategies, location.strategyName)
       return index >= 0
         ? `/rag/data_processing_strategies/${index}`
@@ -112,7 +113,8 @@ export const findConfigPointer = (
         ? '/rag/databases'
         : findConfigPointer(config, { type: 'rag' })
     case 'rag.database': {
-      const databases = (config as any)?.rag?.databases
+      const { rag } = (config as any) ?? {}
+      const databases = rag?.databases
       const index = findIndexByName(databases, location.databaseName)
       return index >= 0
         ? `/rag/databases/${index}`
@@ -133,7 +135,8 @@ export const findConfigPointer = (
         ? '/runtime/models'
         : findConfigPointer(config, { type: 'runtime' })
     case 'runtime.model': {
-      const models = (config as any)?.runtime?.models
+      const { runtime } = (config as any) ?? {}
+      const models = runtime?.models
       const index = findIndexByName(models, location.modelName)
       return index >= 0
         ? `/runtime/models/${index}`

@@ -36,14 +36,13 @@ import {
 } from '../../hooks/useDatasets'
 import { useProject } from '../../hooks/useProjects'
 import { useDataProcessingStrategies } from '../../hooks/useDataProcessingStrategies'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 const Data = () => {
   const [isDragging, setIsDragging] = useState(false)
   const [isDropped, setIsDropped] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -106,18 +105,14 @@ const Data = () => {
     activeProject?.project || ''
   )
 
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = findConfigPointer(
-        (projectResp as any)?.project?.config,
-        { type: 'datasets' }
-      )
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
-    }
-    setMode(nextMode)
-  }
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getDatasetsLocation = useCallback(() => ({ type: 'datasets' as const }), [])
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getDatasetsLocation,
+  })
 
   // Convert API datasets to UI format - only show real datasets from the API
   const datasets = useMemo(() => {

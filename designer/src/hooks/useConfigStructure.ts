@@ -1,11 +1,58 @@
 import { useMemo, useRef } from 'react'
 import yaml from 'yaml'
+import type { ParsedNode } from 'yaml'
 import type { TOCNode, ConfigStructureResult } from '../types/config-toc'
 
-/**
- * Hook to parse YAML config and extract hierarchical structure for TOC
- * Uses JSON Pointers (RFC 6902) for section identification
- */
+const MAX_YAML_LENGTH = 500_000
+
+type LineRange = {
+  start: number
+  end: number
+}
+
+const clampLine = (value: number, max: number) => {
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.min(Math.floor(value), max))
+}
+
+const normaliseRange = (
+  range: LineRange | null,
+  fallbackStart: number,
+  fallbackEnd: number,
+  max: number
+): LineRange => {
+  const start = clampLine(range?.start ?? fallbackStart, max)
+  const end = clampLine(range?.end ?? fallbackEnd, max)
+  return {
+    start,
+    end: Math.max(start, end),
+  }
+}
+
+const rangeFromNode = (
+  node: ParsedNode | null | undefined,
+  counter: yaml.LineCounter | undefined
+): LineRange | null => {
+  if (!node || !node.range || !counter) return null
+  const [startIdx, endIdx] = node.range
+  const start = counter.linePos(Math.max(0, startIdx)).line
+  const end = counter.linePos(Math.max(startIdx, endIdx - 1)).line
+  return { start, end }
+}
+
+const safePointer = (pointer: string | null | undefined) =>
+  typeof pointer === 'string' && pointer.length > 0 ? pointer : '/'
+
+interface BuildArrayParams {
+  items: unknown[]
+  basePath: (string | number)[]
+  pointerPrefix: string
+  idPrefix: string
+  level: number
+  labelForItem: (item: any, index: number) => string
+  parentFallback: LineRange
+}
+
 export function useConfigStructure(
   yamlContent: string,
   shouldUpdate: boolean = true
@@ -30,493 +77,354 @@ export function useConfigStructure(
       return result
     }
 
+    if (yamlContent.length > MAX_YAML_LENGTH) {
+      const result: ConfigStructureResult = {
+        nodes: [],
+        success: false,
+        error: 'Config content exceeds safe size limit',
+      }
+      lastResultRef.current = result
+      return result
+    }
+
+    const yamlLines = yamlContent.split(/\r?\n/)
+    const totalLines = Math.max(yamlLines.length, 1)
+
     try {
-      // Parse YAML with line counter to track positions
+      const lineCounter = new yaml.LineCounter()
       const doc = yaml.parseDocument(yamlContent, {
-        lineCounter: new yaml.LineCounter(),
+        lineCounter,
+        uniqueKeys: true,
       })
-      const config = doc.toJS()
 
+      if (doc.errors.length > 0) {
+        const result: ConfigStructureResult = {
+          nodes: [],
+          success: false,
+          error: doc.errors[0]?.message || 'Invalid YAML',
+        }
+        lastResultRef.current = result
+        return result
+      }
+
+      const config = doc.toJS({})
       if (!config || typeof config !== 'object') {
-        return { nodes: [], success: false, error: 'Invalid config format' }
-      }
-
-      const nodes: TOCNode[] = []
-      const yamlLines = yamlContent.split('\n')
-
-      const matchesLineValue = (
-        lineNumber: number,
-        value: string | undefined
-      ): boolean => {
-        if (!value) return false
-        if (lineNumber <= 0 || lineNumber > yamlLines.length) return false
-        return yamlLines[lineNumber - 1].includes(value)
-      }
-
-      const findLineByNameValue = (
-        value: string | undefined,
-        startAfter: number = 0
-      ): number => {
-        if (!value) return -1
-        for (let i = Math.max(0, startAfter); i < yamlLines.length; i++) {
-          const trimmed = yamlLines[i].trim()
-          if (
-            (trimmed.startsWith('- name:') || trimmed.startsWith('name:')) &&
-            trimmed.includes(value)
-          ) {
-            return i + 1
-          }
+        const result: ConfigStructureResult = {
+          nodes: [],
+          success: false,
+          error: 'Invalid config format',
         }
-        return -1
+        lastResultRef.current = result
+        return result
       }
 
-      // Helper to get line range for a path
-      const getLineRange = (
-        path: (string | number)[]
-      ): { start: number; end: number } => {
-        try {
-          const node = doc.getIn(path, true) as any
-          const lineCounter = (doc as any).lineCounter
-          if (node && node.range && lineCounter) {
-            const startPos = lineCounter.linePos(node.range[0])
-            const endPos = lineCounter.linePos(node.range[1])
-            // linePos returns 1-indexed line numbers
-            return { start: startPos.line, end: endPos.line }
+      const sections: TOCNode[] = []
+
+      const docRange = normaliseRange(
+        rangeFromNode(doc.contents as ParsedNode, lineCounter),
+        1,
+        totalLines,
+        totalLines
+      )
+
+      const buildArrayChildren = ({
+        items,
+        basePath,
+        pointerPrefix,
+        idPrefix,
+        level,
+        labelForItem,
+        parentFallback,
+      }: BuildArrayParams) => {
+        const arrayNode = doc.getIn(basePath, true) as ParsedNode | undefined
+        const sectionRange = normaliseRange(
+          rangeFromNode(arrayNode, lineCounter),
+          parentFallback.start,
+          parentFallback.end,
+          totalLines
+        )
+
+        const children = items.map((item, index) => {
+          const itemNode = doc.getIn([...basePath, index], true) as
+            | ParsedNode
+            | undefined
+          const itemRange = normaliseRange(
+            rangeFromNode(itemNode, lineCounter),
+            sectionRange.start,
+            sectionRange.end,
+            totalLines
+          )
+
+          return {
+            id: `${idPrefix}-${index}`,
+            label: labelForItem(item, index),
+            jsonPointer: safePointer(`${pointerPrefix}/${index}`),
+            lineStart: itemRange.start,
+            lineEnd: itemRange.end,
+            level,
+            isCollapsible: false,
           }
-        } catch (err) {
-          // Silently fall back
+        })
+
+        return {
+          children,
+          sectionRange,
         }
-        return { start: 1, end: 1 }
       }
 
-      // Helper to find line number by searching for a key
-      const findLineByKey = (key: string, startAfter: number = 0): number => {
-        for (let i = startAfter; i < yamlLines.length; i++) {
-          const line = yamlLines[i]
-          // Look for the key at the start of the line (accounting for indentation)
-          if (
-            line.trim().startsWith(key + ':') ||
-            line.trim().startsWith('- ' + key + ':')
-          ) {
-            return i + 1 // Return 1-indexed line number
-          }
-        }
-        return startAfter + 1
-      }
-
-      // 1. Overview section (version, name, namespace)
-      const overviewRange = getLineRange([])
-      nodes.push({
+      sections.push({
         id: 'overview',
         label: 'Overview',
         jsonPointer: '/',
         lineStart: 1,
-        lineEnd: Math.max(3, overviewRange.start + 2),
+        lineEnd: clampLine(Math.max(docRange.start + 2, 3), totalLines),
         level: 0,
         isCollapsible: false,
       })
 
-      // 2. Prompts section
-      if (config.prompts && Array.isArray(config.prompts)) {
-        const promptsRange = getLineRange(['prompts'])
-        const promptsLine =
-          promptsRange.start === 1
-            ? findLineByKey('prompts')
-            : promptsRange.start
-        const promptChildren: TOCNode[] = []
+      // Prompts ---------------------------------------------------------------
+      const prompts = Array.isArray((config as any).prompts)
+        ? (config as any).prompts
+        : []
+      if (prompts.length > 0) {
+        const promptsNode = doc.get('prompts', true) as ParsedNode | undefined
+        const promptsRange = normaliseRange(
+          rangeFromNode(promptsNode, lineCounter),
+          docRange.start,
+          docRange.end,
+          totalLines
+        )
 
-        let lastPromptLine = promptsLine
-        config.prompts.forEach((prompt: any, index: number) => {
-          const promptRange = getLineRange(['prompts', index])
-          let promptLine = promptRange.start
-
-          // Fallback: search for prompt name after the last prompt
-          if (promptLine === 1 && prompt.name) {
-            promptLine = findLineByKey('name', Math.max(0, lastPromptLine - 1))
-            lastPromptLine = promptLine + 5 // Estimate spacing
-          }
-
-          promptChildren.push({
-            id: `prompt-${index}`,
-            label: prompt.name || `Prompt ${index + 1}`,
-            jsonPointer: `/prompts/${index}`,
-            lineStart: promptLine,
-            lineEnd: promptRange.end > 1 ? promptRange.end : promptLine + 10,
-            level: 1,
-            isCollapsible: false,
-          })
+        const { children: promptChildren, sectionRange } = buildArrayChildren({
+          items: prompts,
+          basePath: ['prompts'],
+          pointerPrefix: '/prompts',
+          idPrefix: 'prompt',
+          level: 1,
+          labelForItem: (item, index) => item?.name || `Prompt ${index + 1}`,
+          parentFallback: promptsRange,
         })
 
-        if (promptChildren.length > 0) {
-          nodes.push({
-            id: 'prompts',
-            label: 'Prompts',
-            jsonPointer: '/prompts',
-            lineStart: promptsLine,
-            lineEnd:
-              promptsRange.end > 1
-                ? promptsRange.end
-                : promptChildren[promptChildren.length - 1]?.lineEnd ||
-                  promptsLine + 20,
-            level: 0,
-            isCollapsible: true,
-            children: promptChildren,
-          })
-        }
+        sections.push({
+          id: 'prompts',
+          label: 'Prompts',
+          jsonPointer: '/prompts',
+          lineStart: sectionRange.start,
+          lineEnd:
+            promptChildren.length > 0
+              ? promptChildren[promptChildren.length - 1].lineEnd
+              : sectionRange.end,
+          level: 0,
+          isCollapsible: true,
+          children: promptChildren,
+        })
       }
 
-      // 3. RAG section with databases and data processing strategies
-      if (config.rag && typeof config.rag === 'object') {
-        const ragRange = getLineRange(['rag'])
-        const ragLine =
-          ragRange.start === 1 ? findLineByKey('rag') : ragRange.start
+      // RAG -------------------------------------------------------------------
+      const rag = (config as any).rag
+      if (rag && typeof rag === 'object') {
+        const ragNode = doc.get('rag', true) as ParsedNode | undefined
+        const ragRange = normaliseRange(
+          rangeFromNode(ragNode, lineCounter),
+          docRange.start,
+          docRange.end,
+          totalLines
+        )
+
         const ragChildren: TOCNode[] = []
 
-        // Databases subsection
-        if (config.rag.databases && Array.isArray(config.rag.databases)) {
-          const databasesRange = getLineRange(['rag', 'databases'])
-          const databasesLine =
-            databasesRange.start === 1
-              ? findLineByKey('databases', Math.max(0, ragLine - 1))
-              : databasesRange.start
-          const databaseChildren: TOCNode[] = []
-
-          let lastDbLine = databasesLine
-          config.rag.databases.forEach((db: any, index: number) => {
-            const dbRange = getLineRange(['rag', 'databases', index])
-            let dbLine = dbRange.start
-
-            const isLineValid = matchesLineValue(dbLine, db?.name)
-            if (!isLineValid) {
-              const soughtLine = findLineByNameValue(
-                db?.name,
-                Math.max(0, lastDbLine - 1)
-              )
-              if (soughtLine > 0) {
-                dbLine = soughtLine
-              } else if (dbRange.start > 1) {
-                dbLine = dbRange.start
-              } else {
-                dbLine = databasesLine + 2 + index * 5
-              }
-            }
-
-            lastDbLine = dbLine
-
-            databaseChildren.push({
-              id: `database-${index}`,
-              label: db.name || `Database ${index + 1}`,
-              jsonPointer: `/rag/databases/${index}`,
-              lineStart: dbLine,
-              lineEnd:
-                dbRange.end > dbLine
-                  ? dbRange.end
-                  : Math.min(dbLine + 30, yamlLines.length + 1),
+        const databases = Array.isArray(rag.databases) ? rag.databases : []
+        if (databases.length > 0) {
+          const { children: databaseChildren, sectionRange: databasesRange } =
+            buildArrayChildren({
+              items: databases,
+              basePath: ['rag', 'databases'],
+              pointerPrefix: '/rag/databases',
+              idPrefix: 'database',
               level: 2,
-              isCollapsible: false,
+              labelForItem: (item, index) =>
+                item?.name || `Database ${index + 1}`,
+              parentFallback: ragRange,
             })
-          })
 
-          if (databaseChildren.length > 0) {
-            ragChildren.push({
-              id: 'databases',
-              label: 'Databases',
-              jsonPointer: '/rag/databases',
-              lineStart: databasesLine,
-              lineEnd:
-                databasesRange.end > 1
-                  ? databasesRange.end
-                  : databaseChildren[databaseChildren.length - 1]?.lineEnd ||
-                    databasesLine + 20,
-              level: 1,
-              isCollapsible: true,
-              children: databaseChildren,
-            })
-          }
+          ragChildren.push({
+            id: 'databases',
+            label: 'Databases',
+            jsonPointer: '/rag/databases',
+            lineStart: databasesRange.start,
+            lineEnd:
+              databaseChildren.length > 0
+                ? databaseChildren[databaseChildren.length - 1].lineEnd
+                : databasesRange.end,
+            level: 1,
+            isCollapsible: true,
+            children: databaseChildren,
+          })
         }
 
-        // Data processing strategies subsection
-        if (
-          config.rag.data_processing_strategies &&
-          Array.isArray(config.rag.data_processing_strategies)
-        ) {
-          const strategiesRange = getLineRange([
-            'rag',
-            'data_processing_strategies',
-          ])
-          const strategiesLine =
-            strategiesRange.start === 1
-              ? findLineByKey(
-                  'data_processing_strategies',
-                  Math.max(0, ragLine - 1)
-                )
-              : strategiesRange.start
-          const strategyChildren: TOCNode[] = []
-
-          let lastStrategyLine = strategiesLine
-          config.rag.data_processing_strategies.forEach(
-            (strategy: any, index: number) => {
-              const strategyRange = getLineRange([
-                'rag',
-                'data_processing_strategies',
-                index,
-              ])
-              let strategyLine = strategyRange.start
-
-              // Fallback: search for strategy name
-              if (strategyLine === 1 && strategy.name) {
-                strategyLine = findLineByKey(
-                  'name',
-                  Math.max(0, lastStrategyLine - 1)
-                )
-                lastStrategyLine = strategyLine + 15
-              }
-
-              strategyChildren.push({
-                id: `strategy-${index}`,
-                label: strategy.name || `Strategy ${index + 1}`,
-                jsonPointer: `/rag/data_processing_strategies/${index}`,
-                lineStart: strategyLine,
-                lineEnd:
-                  strategyRange.end > 1 ? strategyRange.end : strategyLine + 20,
-                level: 2,
-                isCollapsible: false,
-              })
-            }
-          )
-
-          if (strategyChildren.length > 0) {
-            ragChildren.push({
-              id: 'data_processing_strategies',
-              label: 'Data processing strategies',
-              jsonPointer: '/rag/data_processing_strategies',
-              lineStart: strategiesLine,
-              lineEnd:
-                strategiesRange.end > 1
-                  ? strategiesRange.end
-                  : strategyChildren[strategyChildren.length - 1]?.lineEnd ||
-                    strategiesLine + 30,
-              level: 1,
-              isCollapsible: true,
-              children: strategyChildren,
+        const strategies = Array.isArray(rag.data_processing_strategies)
+          ? rag.data_processing_strategies
+          : []
+        if (strategies.length > 0) {
+          const { children: strategyChildren, sectionRange: strategiesRange } =
+            buildArrayChildren({
+              items: strategies,
+              basePath: ['rag', 'data_processing_strategies'],
+              pointerPrefix: '/rag/data_processing_strategies',
+              idPrefix: 'strategy',
+              level: 2,
+              labelForItem: (item, index) =>
+                item?.name || `Strategy ${index + 1}`,
+              parentFallback: ragRange,
             })
-          }
+
+          ragChildren.push({
+            id: 'data_processing_strategies',
+            label: 'Data processing strategies',
+            jsonPointer: '/rag/data_processing_strategies',
+            lineStart: strategiesRange.start,
+            lineEnd:
+              strategyChildren.length > 0
+                ? strategyChildren[strategyChildren.length - 1].lineEnd
+                : strategiesRange.end,
+            level: 1,
+            isCollapsible: true,
+            children: strategyChildren,
+          })
         }
 
         if (ragChildren.length > 0) {
-          nodes.push({
+          sections.push({
             id: 'rag',
             label: 'RAG',
             jsonPointer: '/rag',
-            lineStart: ragLine,
-            lineEnd:
-              ragRange.end > 1
-                ? ragRange.end
-                : ragChildren[ragChildren.length - 1]?.lineEnd || ragLine + 50,
+            lineStart: ragRange.start,
+            lineEnd: ragChildren[ragChildren.length - 1].lineEnd,
             level: 0,
             isCollapsible: true,
             children: ragChildren,
           })
+        } else {
+          sections.push({
+            id: 'rag',
+            label: 'RAG',
+            jsonPointer: '/rag',
+            lineStart: ragRange.start,
+            lineEnd: ragRange.end,
+            level: 0,
+            isCollapsible: false,
+          })
         }
       }
 
-      // 4. Datasets section
-      if (config.datasets && Array.isArray(config.datasets)) {
-        const datasetsRange = getLineRange(['datasets'])
-        const datasetsLine =
-          datasetsRange.start === 1
-            ? findLineByKey('datasets')
-            : datasetsRange.start
-        const datasetChildren: TOCNode[] = []
+      // Datasets --------------------------------------------------------------
+      const datasets = Array.isArray((config as any).datasets)
+        ? (config as any).datasets
+        : []
+      if (datasets.length > 0) {
+        const datasetsNode = doc.get('datasets', true) as ParsedNode | undefined
+        const datasetsRange = normaliseRange(
+          rangeFromNode(datasetsNode, lineCounter),
+          docRange.start,
+          docRange.end,
+          totalLines
+        )
 
-        // Always create children for each dataset
-        let lastFoundLine = datasetsLine
-        config.datasets.forEach((dataset: any, index: number) => {
-          const datasetRange = getLineRange(['datasets', index])
-          let datasetLine = datasetRange.start
-          let datasetEndLine = datasetRange.end
-
-          // If parser range is invalid or suspicious, search for the dataset by name
-          if (
-            datasetRange.start <= 1 ||
-            datasetRange.end <= datasetRange.start ||
-            (dataset.name && datasetRange.start < lastFoundLine)
-          ) {
-            // Search for "- name: {dataset_name}" in the YAML
-            if (dataset.name) {
-              const lines = yamlContent.split('\n')
-              for (
-                let i = Math.max(0, lastFoundLine - 1);
-                i < lines.length;
-                i++
-              ) {
-                const line = lines[i].trim()
-                // Look for the list item with this dataset's name
-                if (
-                  (line.startsWith('- name:') || line.startsWith('name:')) &&
-                  line.includes(dataset.name)
-                ) {
-                  datasetLine = i + 1
-                  datasetEndLine = Math.min(i + 6, lines.length)
-                  lastFoundLine = datasetLine
-                  break
-                }
-              }
-            }
-
-            // If still not found, use estimate
-            if (datasetLine <= 1) {
-              datasetLine = datasetsLine + 2 + index * 5
-              datasetEndLine = datasetLine + 4
-            }
-          } else {
-            lastFoundLine = datasetLine
-          }
-
-          datasetChildren.push({
-            id: `dataset-${index}`,
-            label: dataset.name || `Dataset ${index + 1}`,
-            jsonPointer: `/datasets/${index}`,
-            lineStart: datasetLine,
-            lineEnd: datasetEndLine,
-            level: 1,
-            isCollapsible: false,
-          })
+        const { children: datasetChildren, sectionRange } = buildArrayChildren({
+          items: datasets,
+          basePath: ['datasets'],
+          pointerPrefix: '/datasets',
+          idPrefix: 'dataset',
+          level: 1,
+          labelForItem: (item, index) => item?.name || `Dataset ${index + 1}`,
+          parentFallback: datasetsRange,
         })
 
-        nodes.push({
+        sections.push({
           id: 'datasets',
-          label: `Datasets${config.datasets.length > 0 ? ` (${config.datasets.length})` : ''}`,
+          label: `Datasets${datasets.length > 0 ? ` (${datasets.length})` : ''}`,
           jsonPointer: '/datasets',
-          lineStart: datasetsLine,
+          lineStart: sectionRange.start,
           lineEnd:
-            datasetsRange.end > 1
-              ? datasetsRange.end
-              : datasetChildren.length > 0
-                ? datasetChildren[datasetChildren.length - 1].lineEnd + 1
-                : datasetsLine + 20,
+            datasetChildren.length > 0
+              ? datasetChildren[datasetChildren.length - 1].lineEnd
+              : sectionRange.end,
           level: 0,
           isCollapsible: true,
           children: datasetChildren,
         })
       }
 
-      // 5. Runtime section
-      if (config.runtime && typeof config.runtime === 'object') {
-        const runtimeRange = getLineRange(['runtime'])
-        const runtimeLine =
-          runtimeRange.start === 1
-            ? findLineByKey('runtime')
-            : runtimeRange.start
-        const modelChildren: TOCNode[] = []
+      // Runtime ---------------------------------------------------------------
+      const runtime = (config as any).runtime
+      if (runtime && typeof runtime === 'object') {
+        const runtimeNode = doc.get('runtime', true) as ParsedNode | undefined
+        const runtimeRange = normaliseRange(
+          rangeFromNode(runtimeNode, lineCounter),
+          docRange.start,
+          docRange.end,
+          totalLines
+        )
 
-        // Check if there are models to show as children
-        if (
-          config.runtime.models &&
-          Array.isArray(config.runtime.models) &&
-          config.runtime.models.length > 0
-        ) {
-          const modelsRange = getLineRange(['runtime', 'models'])
-          const modelsLine =
-            modelsRange.start > 1 ? modelsRange.start : runtimeLine + 2
+        const models = Array.isArray(runtime.models) ? runtime.models : []
+        let runtimeLineEnd = runtimeRange.end
+        let modelChildren: TOCNode[] | undefined
 
-          // Always create children for each model
-          let lastFoundModelLine = modelsLine
-          config.runtime.models.forEach((model: any, index: number) => {
-            const modelRange = getLineRange(['runtime', 'models', index])
-            let modelLine = modelRange.start
-            let modelEndLine = modelRange.end
-
-            // If parser range is invalid or suspicious, search for the model by name
-            if (
-              modelRange.start <= 1 ||
-              modelRange.end <= modelRange.start ||
-              (model.name && modelRange.start < lastFoundModelLine)
-            ) {
-              // Search for "- name: {model_name}" in the YAML
-              if (model.name) {
-                const lines = yamlContent.split('\n')
-                for (
-                  let i = Math.max(0, lastFoundModelLine - 1);
-                  i < lines.length;
-                  i++
-                ) {
-                  const line = lines[i].trim()
-                  // Look for the list item with this model's name
-                  if (
-                    (line.startsWith('- name:') || line.startsWith('name:')) &&
-                    line.includes(model.name)
-                  ) {
-                    modelLine = i + 1
-                    modelEndLine = Math.min(i + 9, lines.length)
-                    lastFoundModelLine = modelLine
-                    break
-                  }
-                }
-              }
-
-              // If still not found, use estimate
-              if (modelLine <= 1) {
-                modelLine = modelsLine + 1 + index * 8
-                modelEndLine = modelLine + 7
-              }
-            } else {
-              lastFoundModelLine = modelLine
-            }
-
-            modelChildren.push({
-              id: `model-${index}`,
-              label: model.name || `Model ${index + 1}`,
-              jsonPointer: `/runtime/models/${index}`,
-              lineStart: modelLine,
-              lineEnd: modelEndLine,
-              level: 1,
-              isCollapsible: false,
-            })
+        if (models.length > 0) {
+          const { children, sectionRange: modelsRange } = buildArrayChildren({
+            items: models,
+            basePath: ['runtime', 'models'],
+            pointerPrefix: '/runtime/models',
+            idPrefix: 'model',
+            level: 1,
+            labelForItem: (item, index) => item?.name || `Model ${index + 1}`,
+            parentFallback: runtimeRange,
           })
+          modelChildren = children
+          runtimeLineEnd =
+            children.length > 0
+              ? children[children.length - 1].lineEnd
+              : modelsRange.end
         }
 
-        const modelCount = config.runtime.models?.length || 0
-        const label =
-          modelCount > 0 ? `Runtime (${modelCount} models)` : 'Runtime'
-
-        nodes.push({
+        sections.push({
           id: 'runtime',
-          label,
+          label:
+            models.length > 0 ? `Runtime (${models.length} models)` : 'Runtime',
           jsonPointer: '/runtime',
-          lineStart: runtimeLine,
-          lineEnd:
-            runtimeRange.end > 1
-              ? runtimeRange.end
-              : modelChildren.length > 0
-                ? modelChildren[modelChildren.length - 1].lineEnd + 1
-                : runtimeLine + 30,
+          lineStart: runtimeRange.start,
+          lineEnd: runtimeLineEnd,
           level: 0,
-          isCollapsible: modelChildren.length > 0,
-          children: modelChildren.length > 0 ? modelChildren : undefined,
+          isCollapsible:
+            Array.isArray(modelChildren) && modelChildren.length > 0,
+          children: modelChildren,
         })
       }
 
-      // 6. MCP section (if present)
-      if (config.mcp && typeof config.mcp === 'object') {
-        const mcpRange = getLineRange(['mcp'])
-        const mcpLine =
-          mcpRange.start === 1 ? findLineByKey('mcp') : mcpRange.start
-        const serverCount = config.mcp.servers?.length || 0
-        const label = serverCount > 0 ? `MCP (${serverCount} servers)` : 'MCP'
+      // MCP -------------------------------------------------------------------
+      const mcp = (config as any).mcp
+      if (mcp && typeof mcp === 'object') {
+        const mcpNode = doc.get('mcp', true) as ParsedNode | undefined
+        const mcpRange = normaliseRange(
+          rangeFromNode(mcpNode, lineCounter),
+          docRange.start,
+          docRange.end,
+          totalLines
+        )
+        const serverCount = Array.isArray(mcp.servers) ? mcp.servers.length : 0
 
-        nodes.push({
+        sections.push({
           id: 'mcp',
-          label,
+          label: serverCount > 0 ? `MCP (${serverCount} servers)` : 'MCP',
           jsonPointer: '/mcp',
-          lineStart: mcpLine,
-          lineEnd: mcpRange.end > 1 ? mcpRange.end : mcpLine + 20,
+          lineStart: mcpRange.start,
+          lineEnd: mcpRange.end,
           level: 0,
           isCollapsible: false,
         })
       }
 
-      const result: ConfigStructureResult = { nodes, success: true }
+      const result: ConfigStructureResult = { nodes: sections, success: true }
       lastResultRef.current = result
       return result
     } catch (error) {

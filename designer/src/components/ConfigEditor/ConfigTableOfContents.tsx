@@ -173,10 +173,12 @@ const ConfigTableOfContents: React.FC<ConfigTableOfContentsProps> = ({
 
       if (activePointerRef.current) {
         const node = findClosestNode(activePointerRef.current)
-        if (node) {
-          if (currentLine >= node.lineStart && currentLine <= node.lineEnd) {
-            return
-          }
+        if (
+          node &&
+          currentLine >= node.lineStart &&
+          currentLine <= node.lineEnd
+        ) {
+          return
         }
         activePointerRef.current = null
       }

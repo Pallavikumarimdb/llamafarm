@@ -33,7 +33,7 @@ export interface EditorNavigationAPI {
   scrollToLine: (lineNumber: number) => void
 
   /** Highlight lines with a fade effect */
-  highlightLines: (start: number, end: number, duration?: number) => void
+  highlightLines: (start: number, end: number, duration?: number) => () => void
 
   /** Get current scroll position */
   getScrollPosition?: () => number

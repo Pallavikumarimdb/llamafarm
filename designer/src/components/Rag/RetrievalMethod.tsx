@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button } from '../ui/button'
 import PageActions from '../common/PageActions'
@@ -27,8 +27,8 @@ import {
 import ConfigEditor from '../ConfigEditor/ConfigEditor'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useProject } from '../../hooks/useProjects'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 import {
   STRATEGY_TYPES,
   STRATEGY_LABELS,
@@ -48,24 +48,22 @@ function RetrievalMethod() {
     activeProject?.project || '',
     !!activeProject
   )
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
-
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = strategyId
-        ? findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'rag.database.retrieval',
-            retrievalName: strategyId,
-          })
-        : findConfigPointer((projectResp as any)?.project?.config, {
-            type: 'rag.databases',
-          })
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
+  const projectConfig = (projectResp as any)?.project?.config as ProjectConfig | undefined
+  const getRetrievalLocation = useCallback(() => {
+    if (strategyId) {
+      return {
+        type: 'rag.database.retrieval' as const,
+        retrievalName: strategyId,
+      }
     }
-    setMode(nextMode)
-  }
+    return { type: 'rag.databases' as const }
+  }, [strategyId])
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getRetrievalLocation,
+  })
 
   // removed unused strategyName
 

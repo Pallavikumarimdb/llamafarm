@@ -509,6 +509,9 @@ export function useCodeMirror(
           viewRef.current.setContent(content || '')
         } catch (err) {
           console.error('Failed to update editor content:', err)
+          setError('Failed to update editor content')
+          viewRef.current.destroy()
+          viewRef.current = null
         }
       }
     }
@@ -600,11 +603,11 @@ export function useCodeMirror(
 
       highlightLines: (start: number, end: number, duration = 2500) => {
         const view = viewRef.current?.view
-        if (!view || !modules || !highlightEffects) return
+        if (!view || !modules || !highlightEffects) return () => {}
 
-        // Convert 1-indexed to 0-indexed
-        const startLine = Math.max(1, start)
-        const endLine = Math.max(startLine, end)
+        const maxLine = view.state.doc.lines
+        const startLine = Math.min(Math.max(1, start), maxLine)
+        const endLine = Math.min(Math.max(startLine, end), maxLine)
 
         try {
           const fromPos = view.state.doc.line(startLine).from
@@ -621,15 +624,24 @@ export function useCodeMirror(
           })
 
           // Clear highlight after duration (let CSS animation complete)
-          setTimeout(() => {
+          const timeoutId = setTimeout(() => {
             if (viewRef.current?.view && highlightEffects) {
               viewRef.current.view.dispatch({
                 effects: highlightEffects.clearHighlight.of(null),
               })
             }
           }, duration)
+          return () => {
+            clearTimeout(timeoutId)
+            if (viewRef.current?.view && highlightEffects) {
+              viewRef.current.view.dispatch({
+                effects: highlightEffects.clearHighlight.of(null),
+              })
+            }
+          }
         } catch (err) {
           console.error('Failed to highlight lines:', err)
+          return () => {}
         }
       },
 

@@ -1,5 +1,5 @@
 import FontIcon from '../../common/FontIcon'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageActions from '../common/PageActions'
 import DataCards from './DataCards'
@@ -10,8 +10,8 @@ import { useProject } from '../../hooks/useProjects'
 import { useActiveProject } from '../../hooks/useActiveProject'
 import { useListDatasets } from '../../hooks/useDatasets'
 import { useModeWithReset } from '../../hooks/useModeWithReset'
-import { findConfigPointer } from '../../utils/configNavigation'
-import type { Mode } from '../ModeToggle'
+import { useConfigPointer } from '../../hooks/useConfigPointer'
+import type { ProjectConfig } from '../../types/config'
 
 const Dashboard = () => {
   const navigate = useNavigate()
@@ -20,7 +20,6 @@ const Dashboard = () => {
 
   // All state declarations first
   const [mode, setMode] = useModeWithReset('designer')
-  const [configPointer, setConfigPointer] = useState<string | null>(null)
   const [showValidationDetails, setShowValidationDetails] = useState(false)
   const [projectName, setProjectName] = useState<string>('Dashboard')
   // Datasets list for Data card
@@ -36,19 +35,17 @@ const Dashboard = () => {
     activeProject?.project || '',
     !!activeProject?.namespace && !!activeProject?.project
   )
-
-  const handleModeChange = (nextMode: Mode) => {
-    if (nextMode === 'code') {
-      const pointer = findConfigPointer(
-        (projectDetail as any)?.project?.config,
-        { type: 'root' }
-      )
-      setConfigPointer(pointer)
-    } else {
-      setConfigPointer(null)
-    }
-    setMode(nextMode)
-  }
+  const projectConfig = (projectDetail as any)?.project?.config as ProjectConfig | undefined
+  const getRootLocation = useCallback(
+    () => ({ type: 'root' as const }),
+    []
+  )
+  const { configPointer, handleModeChange } = useConfigPointer({
+    mode,
+    setMode,
+    config: projectConfig,
+    getLocation: getRootLocation,
+  })
 
   const { brief } = useMemo(() => {
     const cfg = (projectDetail?.project?.config || {}) as Record<string, any>
