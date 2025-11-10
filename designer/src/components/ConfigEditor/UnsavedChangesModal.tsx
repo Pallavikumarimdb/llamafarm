@@ -34,8 +34,9 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
   isError = false,
 }) => {
   const handleOpenChange = (open: boolean) => {
-    // Don't allow closing modal while saving or when in error mode
-    if (!open && !isSaving && !isError) {
+    // Allow closing via X button unless saving
+    // In error mode, X button acts like "Stay and Fix"
+    if (!open && !isSaving) {
       onCancel()
     }
   }
@@ -46,20 +47,21 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
         className="sm:max-w-md"
         onEscapeKeyDown={e => {
           e.preventDefault()
-          // Allow escape to close in error mode (calls onCancel)
+          // Escape key acts like "Stay and Fix" in error mode
           if (!isSaving) {
             onCancel()
           }
         }}
         onPointerDownOutside={e => {
-          // Prevent closing while saving or in error mode
-          if (isSaving || isError) {
+          // Only prevent closing while saving
+          // In error mode, clicking outside acts like "Stay and Fix"
+          if (isSaving) {
             e.preventDefault()
           }
         }}
         onInteractOutside={e => {
-          // Prevent closing while saving or in error mode
-          if (isSaving || isError) {
+          // Only prevent closing while saving
+          if (isSaving) {
             e.preventDefault()
           }
         }}

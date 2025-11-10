@@ -73,7 +73,6 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({
 
   // Sync isDirty with context
   useEffect(() => {
-    console.log('[ConfigEditor] Syncing isDirty to context:', isDirty)
     unsavedChangesContext.setIsDirty(isDirty)
   }, [isDirty, unsavedChangesContext])
 
