@@ -26,8 +26,12 @@ import {
 import { Label } from './components/ui/label'
 import { Input } from './components/ui/input'
 import { Textarea } from './components/ui/textarea'
+import { useDemoModal } from './contexts/DemoModalContext'
 
 function Home() {
+  // Demo modal context
+  const demoModal = useDemoModal()
+
   // Form state
   const [projectName, setProjectName] = useState('')
   const [copyFromProject, setCopyFromProject] = useState<string>('none')
@@ -348,6 +352,44 @@ function Home() {
             Create a new project
           </h1>
         </div>
+
+        {/* Demo Project Button */}
+        <div className="max-w-3xl mx-auto">
+          <button
+            onClick={() => demoModal.openModal()}
+            className="w-full group relative flex items-center justify-between gap-4 rounded-xl border-2 border-primary bg-gradient-to-r from-primary/5 to-primary/10 p-6 text-left transition-all hover:border-primary hover:shadow-lg hover:shadow-primary/20"
+          >
+            <div className="flex items-start gap-4">
+              <div className="text-5xl">🚀</div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-foreground mb-1">
+                  Try a Demo Project
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Explore LlamaFarm with a pre-configured AI assistant. Ready in 30 seconds.
+                </p>
+              </div>
+            </div>
+            <FontIcon
+              type="arrow-right"
+              className="w-6 h-6 text-primary shrink-0 transition-transform group-hover:translate-x-1"
+            />
+          </button>
+        </div>
+
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-muted"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                or create from scratch
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div id="home-create-form" className="max-w-3xl mx-auto">
           {generalError && (
             <div className="mb-4 text-red-600 bg-red-100 border border-red-300 rounded p-3 text-sm">
@@ -705,6 +747,7 @@ function Home() {
       </div>
       {/* Project edit modal over Home */}
       {/* Modal rendered globally in App */}
+      {/* Demo Modal rendered globally in App via DemoModalRoot */}
     </div>
   )
 }
