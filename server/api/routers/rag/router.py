@@ -3,11 +3,11 @@
 from pathlib import Path
 from typing import Any
 
+from config.datamodel import Database, EmbeddingStrategy, RetrievalStrategy
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api.errors import DatabaseNotFoundError
-from config.datamodel import Database, EmbeddingStrategy, RetrievalStrategy
 from core.logging import FastAPIStructLogger
 from services.database_service import DatabaseService
 from services.project_service import ProjectService
@@ -323,9 +323,13 @@ async def get_rag_databases(namespace: str, project: str):
 class CreateDatabaseRequest(BaseModel):
     """Request model for creating a new database."""
 
-    name: str = Field(..., description="Unique database identifier", pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(
+        ..., description="Unique database identifier", pattern=r"^[a-z][a-z0-9_]*$"
+    )
     type: str = Field(..., description="Database type (ChromaStore, QdrantStore)")
-    config: dict[str, Any] | None = Field(None, description="Database-specific configuration")
+    config: dict[str, Any] | None = Field(
+        None, description="Database-specific configuration"
+    )
     embedding_strategies: list[dict[str, Any]] | None = Field(
         None, description="Embedding strategies for this database"
     )
@@ -343,7 +347,9 @@ class CreateDatabaseRequest(BaseModel):
 class UpdateDatabaseRequest(BaseModel):
     """Request model for updating a database (partial update)."""
 
-    config: dict[str, Any] | None = Field(None, description="Database-specific configuration")
+    config: dict[str, Any] | None = Field(
+        None, description="Database-specific configuration"
+    )
     embedding_strategies: list[dict[str, Any]] | None = Field(
         None, description="Embedding strategies for this database"
     )
@@ -401,12 +407,8 @@ def _database_to_detail(
         name=db.name,
         type=db.type.value if hasattr(db.type, "value") else str(db.type),
         config=db.config,
-        embedding_strategies=[
-            s.model_dump() for s in (db.embedding_strategies or [])
-        ],
-        retrieval_strategies=[
-            s.model_dump() for s in (db.retrieval_strategies or [])
-        ],
+        embedding_strategies=[s.model_dump() for s in (db.embedding_strategies or [])],
+        retrieval_strategies=[s.model_dump() for s in (db.retrieval_strategies or [])],
         default_embedding_strategy=db.default_embedding_strategy,
         default_retrieval_strategy=db.default_retrieval_strategy,
         dependent_datasets=dependent_datasets,
@@ -460,7 +462,9 @@ async def create_database(
             default_retrieval_strategy=request.default_retrieval_strategy,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid database configuration: {e}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid database configuration: {e}"
+        ) from e
 
     try:
         created_db = DatabaseService.create_database(namespace, project, database)
@@ -468,8 +472,8 @@ async def create_database(
         error_msg = str(e)
         # Return 409 Conflict for duplicate database names
         if "already exists" in error_msg:
-            raise HTTPException(status_code=409, detail=error_msg)
-        raise HTTPException(status_code=400, detail=error_msg)
+            raise HTTPException(status_code=409, detail=error_msg) from e
+        raise HTTPException(status_code=400, detail=error_msg) from e
 
     return DatabaseResponse(database=_database_to_info(created_db))
 
@@ -498,7 +502,7 @@ async def get_database(
     except DatabaseNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Database '{database_name}' not found"
-        )
+        ) from None
 
     dependent_datasets = DatabaseService.get_dependent_datasets(
         namespace, project, database_name
@@ -543,7 +547,7 @@ async def update_database(
         except Exception as e:
             raise HTTPException(
                 status_code=400, detail=f"Invalid embedding strategy: {e}"
-            )
+            ) from e
 
     retrieval_strategies = None
     if request.retrieval_strategies is not None:
@@ -554,7 +558,7 @@ async def update_database(
         except Exception as e:
             raise HTTPException(
                 status_code=400, detail=f"Invalid retrieval strategy: {e}"
-            )
+            ) from e
 
     try:
         updated_db = DatabaseService.update_database(
@@ -570,9 +574,9 @@ async def update_database(
     except DatabaseNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Database '{database_name}' not found"
-        )
+        ) from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     dependent_datasets = DatabaseService.get_dependent_datasets(
         namespace, project, database_name
@@ -629,7 +633,7 @@ async def delete_database(
     except DatabaseNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Database '{database_name}' not found"
-        )
+        ) from None
 
     dependent_datasets = DatabaseService.get_dependent_datasets(
         namespace, project, database_name
@@ -649,14 +653,14 @@ async def delete_database(
     except DatabaseNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"Database '{database_name}' not found"
-        )
+        ) from None
     except ValueError as e:
         error_msg = str(e)
         # Check if this is a dependent datasets error (409 Conflict)
         if "dataset(s) depend on it" in error_msg:
-            raise HTTPException(status_code=409, detail=error_msg)
+            raise HTTPException(status_code=409, detail=error_msg) from e
         # Other validation errors (400 Bad Request)
-        raise HTTPException(status_code=400, detail=error_msg)
+        raise HTTPException(status_code=400, detail=error_msg) from e
 
     return DeleteDatabaseResponse(
         message=f"Database '{database_name}' deleted successfully",
