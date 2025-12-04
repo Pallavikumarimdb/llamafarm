@@ -530,6 +530,16 @@ function EditRetrievalStrategy() {
               <div className="text-xl md:text-2xl font-medium">
                 {STRATEGY_LABELS[strategyType]}
               </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                After being created, retrieval strategy types cannot be changed, but you may always{' '}
+                <button
+                  className="text-teal-600 dark:text-teal-400 hover:underline"
+                  onClick={() => navigate(`/chat/databases/add-retrieval?database=${database}`)}
+                >
+                  create a new retrieval strategy
+                </button>
+                .
+              </div>
             </div>
           </div>
         </div>

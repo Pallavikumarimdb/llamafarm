@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../ui/button'
 import { useActiveProject } from '../../hooks/useActiveProject'
@@ -7,7 +7,13 @@ import { useDatabaseManager } from '../../hooks/useDatabaseManager'
 import { useToast } from '../ui/toast'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
-// removed unused imports
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu'
+import FontIcon from '../../common/FontIcon'
 import {
   getDefaultConfigForRetrieval,
   parseWeightsList,
@@ -19,6 +25,8 @@ import {
   type StrategyType,
 } from '../../utils/strategyCatalog'
 import { parseMetadataFilters, validateStrategyName } from '../../utils/security'
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext'
+import UnsavedChangesModal from '../ConfigEditor/UnsavedChangesModal'
 
 function AddRetrievalStrategy() {
   const navigate = useNavigate()
@@ -40,11 +48,27 @@ function AddRetrievalStrategy() {
   // Get the database from URL query params (defaults to main_database if not provided)
   const database = searchParams.get('database') || 'main_database'
 
+  // Get existing retrieval strategies for copy from dropdown
+  const existingStrategies = useMemo(() => {
+    const projectConfig = (projectResp as any)?.project?.config
+    if (!projectConfig) return []
+    const db = projectConfig.rag?.databases?.find(
+      (d: any) => d.name === database
+    )
+    return db?.retrieval_strategies || []
+  }, [projectResp, database])
+
   // New retrieval name and default toggle
   const [name, setName] = useState('New retrieval strategy')
   const [makeDefault, setMakeDefault] = useState(false)
+  const [copyFrom, setCopyFrom] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Unsaved changes tracking
+  const unsavedChangesContext = useUnsavedChanges()
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null)
 
   // Selected type + settings state
   const [selectedType, setSelectedType] = useState<StrategyType | null>(null)
@@ -193,6 +217,166 @@ function AddRetrievalStrategy() {
       setMakeDefault(!hasStrategies)
     }
   }, [projectResp, database])
+
+  // Handle copy from existing strategy
+  useEffect(() => {
+    if (!copyFrom || !projectResp) return
+
+    const projectConfig = (projectResp as any)?.project?.config
+    if (!projectConfig) return
+
+    const db = projectConfig.rag?.databases?.find(
+      (d: any) => d.name === database
+    )
+    const strategy = db?.retrieval_strategies?.find(
+      (s: any) => s.name === copyFrom
+    )
+
+    if (!strategy?.config || !strategy.type) return
+
+    const config = strategy.config
+    const strategyType = strategy.type as StrategyType
+
+    // Set the strategy type
+    setSelectedType(strategyType)
+
+    // Populate form fields based on strategy type
+    if (strategyType === 'BasicSimilarityStrategy') {
+      if (typeof config.top_k === 'number') setBasicTopK(String(config.top_k))
+      if (config.distance_metric) setBasicDistance(String(config.distance_metric))
+      if (config.score_threshold !== null && config.score_threshold !== undefined) {
+        setBasicScoreThreshold(String(config.score_threshold))
+      }
+    } else if (strategyType === 'MetadataFilteredStrategy') {
+      if (typeof config.top_k === 'number') setMfTopK(String(config.top_k))
+      if (config.filter_mode) setMfFilterMode(String(config.filter_mode))
+      if (typeof config.fallback_multiplier === 'number') {
+        setMfFallbackMultiplier(String(config.fallback_multiplier))
+      }
+      if (Array.isArray(config.filters)) {
+        setMfFilters(
+          config.filters.map((f: any) => ({
+            key: String(f.key || ''),
+            value: String(f.value || ''),
+          }))
+        )
+      }
+    } else if (strategyType === 'MultiQueryStrategy') {
+      if (typeof config.num_queries === 'number') {
+        setMqNumQueries(String(config.num_queries))
+      }
+      if (typeof config.top_k === 'number') setMqTopK(String(config.top_k))
+      if (config.aggregation_method) {
+        setMqAggregation(String(config.aggregation_method))
+      }
+      if (Array.isArray(config.query_weights)) {
+        setMqQueryWeights(config.query_weights.join(','))
+      }
+    } else if (strategyType === 'RerankedStrategy') {
+      if (typeof config.initial_k === 'number') {
+        setRrInitialK(String(config.initial_k))
+      }
+      if (typeof config.final_k === 'number') {
+        setRrFinalK(String(config.final_k))
+      }
+      if (typeof config.similarity_weight === 'number') {
+        setRrSimW(String(config.similarity_weight))
+      }
+      if (typeof config.recency_weight === 'number') {
+        setRrRecencyW(String(config.recency_weight))
+      }
+      if (typeof config.length_weight === 'number') {
+        setRrLengthW(String(config.length_weight))
+      }
+      if (typeof config.metadata_weight === 'number') {
+        setRrMetaW(String(config.metadata_weight))
+      }
+      if (config.normalize !== undefined) {
+        setRrNormalize(config.normalize ? 'Enabled' : 'Disabled')
+      }
+    } else if (strategyType === 'HybridUniversalStrategy') {
+      if (config.combination_method) {
+        setHybCombination(String(config.combination_method))
+      }
+      if (typeof config.final_k === 'number') {
+        setHybFinalK(String(config.final_k))
+      }
+      if (Array.isArray(config.strategies)) {
+        setHybStrategies(
+          config.strategies.map((s: any, idx: number) => ({
+            id: `sub-${Date.now()}-${idx}`,
+            type: s.type as Exclude<StrategyType, 'HybridUniversalStrategy'>,
+            weight: String(s.weight || '1.0'),
+            config: s.config || {},
+          }))
+        )
+      }
+    }
+  }, [copyFrom, projectResp, database])
+
+  // Track changes to form fields (after all state is declared)
+  useEffect(() => {
+    // Check if any form field has been modified from defaults
+    const hasChanges =
+      name !== 'New retrieval strategy' ||
+      copyFrom !== '' ||
+      selectedType !== null ||
+      makeDefault !== false ||
+      basicTopK !== '10' ||
+      basicDistance !== 'cosine' ||
+      basicScoreThreshold !== '' ||
+      mfTopK !== '10' ||
+      mfFilterMode !== 'pre' ||
+      mfFallbackMultiplier !== '3' ||
+      mfFilters.length > 0 ||
+      mqNumQueries !== '3' ||
+      mqTopK !== '10' ||
+      mqAggregation !== 'weighted' ||
+      mqQueryWeights !== '' ||
+      rrInitialK !== '30' ||
+      rrFinalK !== '10' ||
+      rrSimW !== '0.7' ||
+      rrRecencyW !== '0.1' ||
+      rrLengthW !== '0.1' ||
+      rrMetaW !== '0.1' ||
+      rrNormalize !== 'Enabled' ||
+      hybStrategies.length > 0 ||
+      hybCombination !== 'weighted_average' ||
+      hybFinalK !== '10'
+
+    setHasUnsavedChanges(hasChanges)
+  }, [
+    name,
+    copyFrom,
+    selectedType,
+    makeDefault,
+    basicTopK,
+    basicDistance,
+    basicScoreThreshold,
+    mfTopK,
+    mfFilterMode,
+    mfFallbackMultiplier,
+    mfFilters,
+    mqNumQueries,
+    mqTopK,
+    mqAggregation,
+    mqQueryWeights,
+    rrInitialK,
+    rrFinalK,
+    rrSimW,
+    rrRecencyW,
+    rrLengthW,
+    rrMetaW,
+    rrNormalize,
+    hybStrategies,
+    hybCombination,
+    hybFinalK,
+  ])
+
+  // Sync isDirty with context
+  useEffect(() => {
+    unsavedChangesContext.setIsDirty(hasUnsavedChanges)
+  }, [hasUnsavedChanges, unsavedChangesContext])
 
   // Validation function
   const validateStrategy = (): string[] => {
@@ -375,6 +559,9 @@ function AddRetrievalStrategy() {
         variant: 'default',
       })
 
+      // Clear unsaved changes before navigating
+      setHasUnsavedChanges(false)
+      
       navigate('/chat/databases')
     } catch (error: any) {
       console.error('Failed to create retrieval strategy:', error)
@@ -435,16 +622,75 @@ function AddRetrievalStrategy() {
               className="h-9"
             />
           </div>
-          <div className="flex items-end">
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={makeDefault}
-                onChange={e => setMakeDefault(e.target.checked)}
-              />
-              <span>Make default</span>
-            </label>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">Copy from</Label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-full h-9 rounded-md border border-border bg-background px-3 text-left flex items-center justify-between text-sm">
+                  <span
+                    className={
+                      copyFrom ? 'text-foreground' : 'text-muted-foreground'
+                    }
+                  >
+                    {copyFrom || 'Select a strategy to copy...'}
+                  </span>
+                  <FontIcon type="chevron-down" className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-64">
+                <DropdownMenuItem
+                  onClick={() => {
+                    setCopyFrom('')
+                    // Reset form to defaults
+                    setName('New retrieval strategy')
+                    setSelectedType(null)
+                    setMakeDefault(false)
+                    setBasicTopK('10')
+                    setBasicDistance('cosine')
+                    setBasicScoreThreshold('')
+                    setMfTopK('10')
+                    setMfFilterMode('pre')
+                    setMfFallbackMultiplier('3')
+                    setMfFilters([])
+                    setMqNumQueries('3')
+                    setMqTopK('10')
+                    setMqAggregation('weighted')
+                    setMqQueryWeights('')
+                    setRrInitialK('30')
+                    setRrFinalK('10')
+                    setRrSimW('0.7')
+                    setRrRecencyW('0.1')
+                    setRrLengthW('0.1')
+                    setRrMetaW('0.1')
+                    setRrNormalize('Enabled')
+                    setHybStrategies([])
+                    setHybCombination('weighted_average')
+                    setHybFinalK('10')
+                  }}
+                >
+                  None
+                </DropdownMenuItem>
+                {existingStrategies.map((strategy: any) => (
+                  <DropdownMenuItem
+                    key={strategy.name}
+                    onClick={() => setCopyFrom(strategy.name)}
+                  >
+                    {strategy.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+        </div>
+        <div className="mt-3">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={makeDefault}
+              onChange={e => setMakeDefault(e.target.checked)}
+            />
+            <span>Make default</span>
+          </label>
         </div>
       </section>
 
@@ -992,6 +1238,54 @@ function AddRetrievalStrategy() {
           </div>
         </section>
       ) : null}
+
+      {/* Unsaved changes modal */}
+      <UnsavedChangesModal
+        isOpen={unsavedChangesContext.showModal}
+        onSave={async () => {
+          if (!selectedType) {
+            setModalErrorMessage('Please select a strategy type before saving')
+            return
+          }
+
+          try {
+            setModalErrorMessage(null)
+            setError(null)
+
+            // Confirm navigation before calling onSave (which will navigate on success)
+            unsavedChangesContext.confirmNavigation()
+            
+            // Call onSave - it handles setIsSaving and navigation internally
+            await onSave()
+            
+            // If we get here and there's an error, onSave didn't navigate
+            if (error) {
+              setModalErrorMessage(error)
+              // Cancel navigation since save failed
+              unsavedChangesContext.cancelNavigation()
+            } else {
+              // Save succeeded - navigation will happen in onSave
+              setHasUnsavedChanges(false)
+            }
+          } catch (e: any) {
+            setModalErrorMessage(e?.message || 'Failed to save strategy')
+            unsavedChangesContext.cancelNavigation()
+          }
+        }}
+        onDiscard={() => {
+          // Clear unsaved changes flag and confirm navigation
+          setHasUnsavedChanges(false)
+          setModalErrorMessage(null)
+          unsavedChangesContext.confirmNavigation()
+        }}
+        onCancel={() => {
+          setModalErrorMessage(null)
+          unsavedChangesContext.cancelNavigation()
+        }}
+        isSaving={isSaving}
+        errorMessage={modalErrorMessage}
+        isError={!!modalErrorMessage}
+      />
     </div>
   )
 }
