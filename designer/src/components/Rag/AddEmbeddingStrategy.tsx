@@ -1151,11 +1151,11 @@ function AddEmbeddingStrategy() {
     // Clear unsaved changes flags BEFORE navigation to prevent modal from showing
     setHasUnsavedChanges(false)
     unsavedChangesContext.setIsDirty(false)
-    toast({ message: 'Embedding strategy created', variant: 'default' })
+    toast({ message: 'Strategy saved', variant: 'default' })
     // Use requestAnimationFrame to ensure state updates propagate before navigation
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        navigate('/chat/databases')
+    navigate('/chat/databases')
       })
     })
   }
@@ -1805,7 +1805,7 @@ function AddEmbeddingStrategy() {
                   // Clear unsaved changes flags BEFORE closing modal/navigating
                   setHasUnsavedChanges(false)
                   unsavedChangesContext.setIsDirty(false)
-                  
+
                   setConfirmOpen(false)
                   if (makeDefault) {
                     setReembedOpen(true)

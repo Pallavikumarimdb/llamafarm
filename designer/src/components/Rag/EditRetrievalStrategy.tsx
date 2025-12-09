@@ -440,7 +440,7 @@ function EditRetrievalStrategy() {
       })
 
       toast({
-        message: `Retrieval strategy "${name.trim()}" updated successfully`,
+        message: 'Strategy saved',
         variant: 'default',
       })
 

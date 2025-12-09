@@ -555,7 +555,7 @@ function AddRetrievalStrategy() {
       })
 
       toast({
-        message: `Retrieval strategy "${name.trim()}" created successfully`,
+        message: 'Strategy saved',
         variant: 'default',
       })
 
