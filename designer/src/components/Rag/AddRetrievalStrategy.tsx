@@ -583,15 +583,21 @@ function AddRetrievalStrategy() {
         projectConfig,
       })
 
+      // Clear unsaved changes flags BEFORE navigation to prevent modal from showing
+      setHasUnsavedChanges(false)
+      unsavedChangesContext.setIsDirty(false)
+      
       toast({
         message: 'Strategy saved',
         variant: 'default',
       })
-
-      // Clear unsaved changes before navigating
-      setHasUnsavedChanges(false)
       
-      navigate('/chat/databases')
+      // Use requestAnimationFrame to ensure state updates propagate before navigation
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          navigate('/chat/databases')
+        })
+      })
     } catch (error: any) {
       console.error('Failed to create retrieval strategy:', error)
       setError(error.message || 'Failed to create strategy')
