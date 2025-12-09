@@ -465,7 +465,6 @@ function ChangeEmbeddingModel() {
   ])
   const [openaiOrg, setOpenaiOrg] = useState('')
   const [openaiMaxRetries, setOpenaiMaxRetries] = useState(3)
-  const [confirmOpen, setConfirmOpen] = useState(false)
   const [makeDefault, setMakeDefault] = useState(false)
   const [reembedOpen, setReembedOpen] = useState(false)
   const [azureDeployment, setAzureDeployment] = useState('')
@@ -1304,7 +1303,7 @@ function ChangeEmbeddingModel() {
                   Make default
                 </label>
               )}
-              <Button onClick={() => setConfirmOpen(true)} disabled={isSaving}>
+              <Button onClick={saveEdited} disabled={isSaving}>
                 {isSaving ? 'Saving...' : 'Save strategy'}
               </Button>
             </div>
@@ -1905,110 +1904,6 @@ function ChangeEmbeddingModel() {
             )}
           </section>
 
-          {/* Save modal */}
-          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <DialogContent>
-              <DialogTitle>Save this embedding strategy?</DialogTitle>
-              <DialogDescription>
-                <div className="mt-2 text-sm">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                    <div className="text-muted-foreground">Strategy name</div>
-                    <div className="truncate">
-                      {strategyName || '(unnamed)'}
-                    </div>
-                    <div className="text-muted-foreground">Runtime</div>
-                    <div>{runtimeLabel}</div>
-                    <div className="text-muted-foreground">Provider</div>
-                    <div>{summaryProvider || 'n/a'}</div>
-                    <div className="text-muted-foreground">Model</div>
-                    <div className="font-mono truncate">
-                      {summaryModel || 'n/a'}
-                    </div>
-                    <div className="text-muted-foreground">
-                      Base URL / Location
-                    </div>
-                    <div className="truncate">{summaryLocation || 'n/a'}</div>
-                    <div className="text-muted-foreground">
-                      Vector dimension (d)
-                    </div>
-                    <div>{dimension ?? meta?.dim ?? 'n/a'}</div>
-                    <div className="text-muted-foreground">Batch size</div>
-                    <div>{batchSize}</div>
-                    <div className="text-muted-foreground">Timeout (sec)</div>
-                    <div>{timeoutSec}</div>
-                    <div className="text-muted-foreground">Auto-pull model</div>
-                    <div>{ollamaAutoPull ? 'Enabled' : 'Disabled'}</div>
-                    {summaryProvider === 'OpenAI' ? (
-                      <>
-                        <div className="text-muted-foreground">
-                          Organization
-                        </div>
-                        <div className="truncate">{openaiOrg || '(none)'}</div>
-                        <div className="text-muted-foreground">Max retries</div>
-                        <div>{openaiMaxRetries}</div>
-                      </>
-                    ) : null}
-                    {summaryProvider === 'Azure OpenAI' ? (
-                      <>
-                        <div className="text-muted-foreground">Deployment</div>
-                        <div className="truncate">
-                          {azureDeployment || 'n/a'}
-                        </div>
-                        <div className="text-muted-foreground">Endpoint</div>
-                        <div className="truncate">{azureResource || 'n/a'}</div>
-                        <div className="text-muted-foreground">API version</div>
-                        <div className="truncate">
-                          {azureApiVersion || '(default)'}
-                        </div>
-                      </>
-                    ) : null}
-                    {summaryProvider === 'Google' ? (
-                      <>
-                        <div className="text-muted-foreground">Project ID</div>
-                        <div className="truncate">
-                          {vertexProjectId || 'n/a'}
-                        </div>
-                        <div className="text-muted-foreground">Location</div>
-                        <div className="truncate">
-                          {vertexLocation || 'n/a'}
-                        </div>
-                        <div className="text-muted-foreground">Endpoint</div>
-                        <div className="truncate">
-                          {vertexEndpoint || '(auto)'}
-                        </div>
-                      </>
-                    ) : null}
-                    {summaryProvider === 'AWS Bedrock' ? (
-                      <>
-                        <div className="text-muted-foreground">Region</div>
-                        <div className="truncate">{bedrockRegion || 'n/a'}</div>
-                      </>
-                    ) : null}
-                  </div>
-                  {!isDefaultStrategy && makeDefault ? (
-                    <div className="mt-3 text-xs">Will set as default</div>
-                  ) : null}
-                </div>
-              </DialogDescription>
-              <DialogFooter>
-                <Button
-                  variant="secondary"
-                  onClick={() => setConfirmOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={saveEdited} disabled={isSaving}>
-                  {isSaving
-                    ? 'Saving...'
-                    : selected?.runtime === 'Local' &&
-                        selected?.modelId &&
-                        !isModelOnDisk(selected.modelId)
-                      ? 'Save strategy (model will be downloaded)'
-                      : 'Save strategy'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
           {/* Download confirmation modal */}
           <Dialog
