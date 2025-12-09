@@ -59,7 +59,8 @@ function AddRetrievalStrategy() {
   }, [projectResp, database])
 
   // New retrieval name and default toggle
-  const [name, setName] = useState('New retrieval strategy')
+  const [name, setName] = useState('new-retrieval-strategy')
+  const [nameTouched, setNameTouched] = useState(false)
   const [makeDefault, setMakeDefault] = useState(false)
   const [copyFrom, setCopyFrom] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
@@ -378,6 +379,28 @@ function AddRetrievalStrategy() {
     unsavedChangesContext.setIsDirty(hasUnsavedChanges)
   }, [hasUnsavedChanges, unsavedChangesContext])
 
+  // Real-time duplicate name validation (case-insensitive)
+  // Check immediately for default names, or after field is touched
+  const duplicateNameError = useMemo(() => {
+    if (!projectResp || !name.trim()) return null
+    
+    // Always check for duplicates (don't wait for touch) so default names are validated
+    const projectConfig = (projectResp as any)?.project?.config
+    const currentDb = projectConfig?.rag?.databases?.find(
+      (db: any) => db.name === database
+    )
+    if (currentDb) {
+      const nameLower = name.trim().toLowerCase()
+      const nameExists = currentDb.retrieval_strategies?.some(
+        (s: any) => s.name?.toLowerCase() === nameLower
+      )
+      if (nameExists) {
+        return 'A strategy with this name already exists'
+      }
+    }
+    return null
+  }, [name, projectResp, database])
+
   // Validation function
   const validateStrategy = (): string[] => {
     const errors: string[] = []
@@ -390,6 +413,11 @@ function AddRetrievalStrategy() {
     const nameError = validateStrategyName(name)
     if (nameError) {
       errors.push(nameError)
+    }
+    
+    // Check for duplicate strategy name
+    if (duplicateNameError) {
+      errors.push(duplicateNameError)
     }
     
     // Type-specific validation
@@ -456,12 +484,13 @@ function AddRetrievalStrategy() {
         throw new Error(`Database ${database} not found in configuration`)
       }
 
-      // Check if name already exists
+      // Check if name already exists (case-insensitive)
+      const nameLower = name.trim().toLowerCase()
       const existingStrategy = currentDb.retrieval_strategies?.find(
-        (s: any) => s.name === name.trim()
+        (s: any) => s.name?.toLowerCase() === nameLower
       )
       if (existingStrategy) {
-        throw new Error(`A retrieval strategy with name "${name.trim()}" already exists`)
+        throw new Error('A strategy with this name already exists')
       }
 
       // Build config from current state
@@ -596,18 +625,18 @@ function AddRetrievalStrategy() {
           </Button>
           <Button
             onClick={onSave}
-            disabled={isSaving || !selectedType || name.trim().length === 0}
+            disabled={
+              isSaving || 
+              !selectedType || 
+              name.trim().length === 0 || 
+              !!validateStrategyName(name) || 
+              !!duplicateNameError
+            }
           >
             {isSaving ? 'Saving...' : 'Save strategy'}
           </Button>
         </div>
       </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-2 rounded-md text-sm">
-          {error}
-        </div>
-      )}
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -617,10 +646,39 @@ function AddRetrievalStrategy() {
             </Label>
             <Input
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                setName(e.target.value)
+                // Clear error state when user starts typing if validation passes
+                if (nameTouched) {
+                  const nameError = validateStrategyName(e.target.value)
+                  if (!nameError && !duplicateNameError) {
+                    setError(null)
+                  }
+                }
+              }}
+              onBlur={() => setNameTouched(true)}
               placeholder="Enter a name"
-              className="h-9"
+              className={`h-9 ${
+                (validateStrategyName(name) || duplicateNameError)
+                  ? 'border-destructive'
+                  : ''
+              }`}
             />
+            {validateStrategyName(name) && (
+              <p className="text-xs text-destructive mt-1">
+                {validateStrategyName(name)}
+              </p>
+            )}
+            {!validateStrategyName(name) && duplicateNameError && (
+              <p className="text-xs text-destructive mt-1">
+                {duplicateNameError}
+              </p>
+            )}
+            {!validateStrategyName(name) && !duplicateNameError && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Can only contain letters, numbers, hyphens, and underscores
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs text-muted-foreground">Copy from</Label>
@@ -642,7 +700,7 @@ function AddRetrievalStrategy() {
                   onClick={() => {
                     setCopyFrom('')
                     // Reset form to defaults
-                    setName('New retrieval strategy')
+                    setName('new-retrieval-strategy')
                     setSelectedType(null)
                     setMakeDefault(false)
                     setBasicTopK('10')
