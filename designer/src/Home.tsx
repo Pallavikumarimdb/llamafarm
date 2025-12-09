@@ -637,7 +637,7 @@ function Home() {
         )}
 
         {/* Search and Sort - only show if there are projects */}
-        {filteredAndSortedProjectNames.length > 0 && (
+        {projectsList.length > 0 && (
           <div className="mb-4 flex flex-col sm:flex-row gap-3">
             <div className="flex-1 flex items-center bg-card rounded-lg px-3 py-2 border border-input">
               <FontIcon type="search" className="w-4 h-4 text-foreground" />
@@ -662,7 +662,7 @@ function Home() {
           </div>
         )}
 
-        {/* Empty state when no projects */}
+        {/* Empty state when no projects or no search results */}
         {filteredAndSortedProjectNames.length === 0 ? (
           <div className="w-full">
             <div className="text-center px-6 py-8 rounded-xl border border-border bg-card/40">
@@ -670,12 +670,14 @@ function Home() {
                 <FontIcon type="folder" className="w-6 h-6 text-primary" />
               </div>
               <div className="text-lg font-medium text-foreground mb-2">
-                No projects yet
+                {projectsList.length === 0
+                  ? 'No projects yet'
+                  : 'No projects match your search'}
               </div>
               <div className="text-sm text-muted-foreground mb-6">
-                Create your first project to start building AI-powered
-                applications. Each project can have its own models, prompts, and
-                data.
+                {projectsList.length === 0
+                  ? 'Create your first project to start building AI-powered applications. Each project can have its own models, prompts, and data.'
+                  : "Try adjusting your search query to find what you're looking for."}
               </div>
               <button
                 className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"

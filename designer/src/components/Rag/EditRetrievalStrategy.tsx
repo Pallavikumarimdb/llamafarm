@@ -482,7 +482,12 @@ function EditRetrievalStrategy() {
       navigate('/chat/databases')
     } catch (error: any) {
       console.error('Failed to update retrieval strategy:', error)
-      setError(error.message || 'Failed to update strategy')
+      const errorMessage = error.message || 'Failed to update strategy'
+      setError(errorMessage)
+      toast({
+        message: errorMessage,
+        variant: 'destructive',
+      })
     } finally {
       setIsSaving(false)
     }

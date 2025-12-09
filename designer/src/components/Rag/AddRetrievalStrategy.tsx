@@ -64,7 +64,7 @@ function AddRetrievalStrategy() {
   const [makeDefault, setMakeDefault] = useState(false)
   const [copyFrom, setCopyFrom] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [_error, setError] = useState<string | null>(null)
 
   // Unsaved changes tracking
   const unsavedChangesContext = useUnsavedChanges()
@@ -319,7 +319,7 @@ function AddRetrievalStrategy() {
   useEffect(() => {
     // Check if any form field has been modified from defaults
     const hasChanges =
-      name !== 'New retrieval strategy' ||
+      name !== 'new-retrieval-strategy' ||
       copyFrom !== '' ||
       selectedType !== null ||
       makeDefault !== false ||
@@ -456,7 +456,7 @@ function AddRetrievalStrategy() {
   }
 
   // Save handler - updated to use project config
-  const onSave = async () => {
+  const onSave = async (): Promise<void> => {
     try {
       setIsSaving(true)
       setError(null)
@@ -464,9 +464,10 @@ function AddRetrievalStrategy() {
       // Validate
       const validationErrors = validateStrategy()
       if (validationErrors.length > 0) {
-        setError(validationErrors.join(', '))
+        const errorMsg = validationErrors.join(', ')
+        setError(errorMsg)
         setIsSaving(false)
-        return
+        throw new Error(errorMsg)
       }
 
       // Get current project config
@@ -600,9 +601,11 @@ function AddRetrievalStrategy() {
       })
     } catch (error: any) {
       console.error('Failed to create retrieval strategy:', error)
-      setError(error.message || 'Failed to create strategy')
-    } finally {
+      const errorMessage = error.message || 'Failed to create strategy'
+      setError(errorMessage)
       setIsSaving(false)
+      // Re-throw so callers can catch it
+      throw error
     }
   }
 
@@ -1320,19 +1323,15 @@ function AddRetrievalStrategy() {
             unsavedChangesContext.confirmNavigation()
             
             // Call onSave - it handles setIsSaving and navigation internally
+            // onSave will throw on error, so we can catch it here
             await onSave()
             
-            // If we get here and there's an error, onSave didn't navigate
-            if (error) {
-              setModalErrorMessage(error)
-              // Cancel navigation since save failed
-              unsavedChangesContext.cancelNavigation()
-            } else {
-              // Save succeeded - navigation will happen in onSave
-              setHasUnsavedChanges(false)
-            }
+            // If we get here, save succeeded - navigation will happen in onSave
+            setHasUnsavedChanges(false)
           } catch (e: any) {
-            setModalErrorMessage(e?.message || 'Failed to save strategy')
+            const errorMessage = e?.message || 'Failed to save strategy'
+            setModalErrorMessage(errorMessage)
+            // Cancel navigation since save failed
             unsavedChangesContext.cancelNavigation()
           }
         }}

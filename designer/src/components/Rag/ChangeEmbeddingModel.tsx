@@ -367,7 +367,7 @@ function ChangeEmbeddingModel() {
         }
       }),
     }))
-  }, [cachedModelsResponse, query])
+  }, [cachedModelsResponse])
 
   const filteredGroups: LocalGroup[] = useMemo(() => {
     if (!query.trim()) return localGroups
@@ -382,7 +382,7 @@ function ChangeEmbeddingModel() {
           g.name.toLowerCase().includes(q) ||
           (g.variants && g.variants.length > 0)
       )
-  }, [query])
+  }, [query, localGroups])
 
   const providerOptions = [
     'OpenAI',
