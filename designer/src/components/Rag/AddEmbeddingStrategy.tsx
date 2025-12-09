@@ -29,44 +29,12 @@ import modelService from '../../api/modelService'
 import Loader from '../../common/Loader'
 import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext'
 import UnsavedChangesModal from '../ConfigEditor/UnsavedChangesModal'
-
-// Helper for symmetric AES encryption (same as edit page)
-async function encryptAPIKey(apiKey: string, secret: string) {
-  const enc = new TextEncoder()
-  const keyMaterial = await window.crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveKey']
-  )
-  const salt = window.crypto.getRandomValues(new Uint8Array(16))
-  const key = await window.crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: salt,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt']
-  )
-  const iv = window.crypto.getRandomValues(new Uint8Array(12))
-  const ciphertext = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    enc.encode(apiKey)
-  )
-  const base64 = (ab: ArrayBuffer) =>
-    window.btoa(String.fromCharCode(...new Uint8Array(ab)))
-  return JSON.stringify({
-    salt: base64(salt.buffer),
-    iv: base64(iv.buffer),
-    data: base64(ciphertext),
-  })
-}
+import { encryptAPIKey } from '../../utils/encryption'
+import {
+  LocalModelTable,
+  type Variant,
+  type LocalGroup,
+} from './LocalModelTable'
 
 function AddEmbeddingStrategy() {
   const navigate = useNavigate()
@@ -124,7 +92,6 @@ function AddEmbeddingStrategy() {
   // Selection UI state (reusing the edit page's structure)
   const [sourceTab, setSourceTab] = useState<'local' | 'cloud'>('local')
   const [query, setQuery] = useState('')
-  const [expandedGroupId, setExpandedGroupId] = useState<number | null>(null)
   const [isManuallyRefreshing, setIsManuallyRefreshing] = useState(false)
 
   // Download state per model
@@ -208,25 +175,6 @@ function AddEmbeddingStrategy() {
     return found?.size || null
   }
 
-  type Variant = {
-    id: string
-    label: string
-    dim: string
-    quality: string
-    download: string
-    modelIdentifier?: string
-    isDownloaded?: boolean
-    diskSize?: number | null
-  }
-  type LocalGroup = {
-    id: number
-    name: string
-    dim: string
-    quality: string
-    ramVram: string
-    download: string
-    variants: Variant[]
-  }
 
   // Base local groups with model identifiers
   const baseLocalGroups: LocalGroup[] = [
@@ -1474,229 +1422,18 @@ function AddEmbeddingStrategy() {
         )}
 
         {sourceTab === 'local' && showModelTable && (
-          <>
-            <div className="flex items-center justify-between w-full">
-              <div className="relative flex-1 max-w-md">
-                <FontIcon
-                  type="search"
-                  className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
-                />
-                <Input
-                  placeholder="Search local options"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  className="pl-9 h-10"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isManuallyRefreshing || isLoadingCachedModels}
-                className="h-10 ml-2"
-              >
-                {isManuallyRefreshing || isLoadingCachedModels ? (
-                  <Loader size={16} className="mr-2" />
-                ) : null}
-                Refresh
-              </Button>
-            </div>
-            <div className="w-full overflow-hidden rounded-lg border border-border">
-              <div className="grid grid-cols-12 items-center bg-secondary text-secondary-foreground text-xs px-3 py-2">
-                <div className="col-span-3">Model</div>
-                <div className="col-span-2">dim</div>
-                <div className="col-span-2">Quality</div>
-                <div className="col-span-2">Size</div>
-                <div className="col-span-2">Status</div>
-                <div className="col-span-1" />
-              </div>
-              {filteredGroups.map(group => {
-                const isOpen = expandedGroupId === group.id
-                return (
-                  <div key={group.id} className="border-t border-border">
-                    <div
-                      className="grid grid-cols-12 items-center px-3 py-3 text-sm cursor-pointer hover:bg-accent/40"
-                      onClick={() =>
-                        setExpandedGroupId(prev =>
-                          prev === group.id ? null : group.id
-                        )
-                      }
-                    >
-                      <div className="col-span-3 flex items-center gap-2">
-                        <FontIcon
-                          type="chevron-down"
-                          className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                        />
-                        <span className="truncate font-medium">
-                          {group.name}
-                        </span>
-                      </div>
-                      <div className="col-span-2 text-xs text-muted-foreground">
-                        {group.dim}
-                      </div>
-                      <div className="col-span-2 text-xs text-muted-foreground">
-                        {group.quality}
-                      </div>
-                      <div className="col-span-2 text-xs text-muted-foreground">
-                        {group.download}
-                      </div>
-                      <div className="col-span-2 text-xs text-muted-foreground">
-                        {group.ramVram}
-                      </div>
-                      <div className="col-span-1" />
-                    </div>
-                    {group.variants && isOpen && (
-                      <div className="px-3 pb-2">
-                        {group.variants.map(v => {
-                          const isUsing =
-                            selected?.runtime === 'Local' &&
-                            selected?.modelId === v.id
-                          const downloadState = downloadStates[v.id]
-                          const isDownloading =
-                            downloadState?.state === 'downloading'
-                          const hasError = downloadState?.state === 'error'
-                          const isDownloaded =
-                            v.isDownloaded || downloadState?.state === 'success'
-
-                          return (
-                            <div
-                              key={v.id}
-                              className="grid grid-cols-12 items-center px-3 py-3 text-sm rounded-md hover:bg-accent/40"
-                            >
-                              <div className="col-span-3 flex items-center text-muted-foreground">
-                                <span className="inline-block w-4" />
-                                <span className="ml-2 font-mono text-xs truncate">
-                                  {v.label}
-                                </span>
-                              </div>
-                              <div className="col-span-2 text-xs text-muted-foreground">
-                                {v.dim}
-                              </div>
-                              <div className="col-span-2 text-xs text-muted-foreground">
-                                {v.quality}
-                              </div>
-                              <div className="col-span-2 text-xs text-muted-foreground">
-                                {v.download}
-                              </div>
-                              <div className="col-span-2 flex items-center gap-2 flex-wrap">
-                                {isDownloaded && (
-                                  <Badge
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-xl text-muted-foreground border-muted"
-                                  >
-                                    On disk
-                                  </Badge>
-                                )}
-                                {isUsing && (
-                                  <Badge
-                                    variant="default"
-                                    size="sm"
-                                    className="rounded-xl"
-                                  >
-                                    <FontIcon
-                                      type="checkmark-filled"
-                                      className="w-3 h-3 mr-1"
-                                    />
-                                    Using
-                                  </Badge>
-                                )}
-                                {hasError && (
-                                  <Badge
-                                    variant="secondary"
-                                    size="sm"
-                                    className="rounded-xl text-destructive border-destructive"
-                                  >
-                                    Error
-                                  </Badge>
-                                )}
-                                {!isDownloaded && !isUsing && !hasError && (
-                                  <Badge
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-xl"
-                                  >
-                                    Not downloaded
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="col-span-1 flex items-center justify-end pr-2">
-                                <Button
-                                  size="sm"
-                                  className={`h-8 px-3 ${
-                                    !isUsing &&
-                                    selected?.runtime === 'Local' &&
-                                    selected?.modelId
-                                      ? 'opacity-60 hover:opacity-100'
-                                      : ''
-                                  }`}
-                                  onClick={e => {
-                                    e.stopPropagation()
-                                    selectLocal(v)
-                                  }}
-                                  disabled={isDownloading || hasError}
-                                  variant={
-                                    !isUsing &&
-                                    selected?.runtime === 'Local' &&
-                                    selected?.modelId
-                                      ? 'outline'
-                                      : 'default'
-                                  }
-                                >
-                                  {isDownloading ? (
-                                    'Downloading...'
-                                  ) : isUsing ? (
-                                    <span className="inline-flex items-center gap-1">
-                                      <FontIcon
-                                        type="checkmark-filled"
-                                        className="w-4 h-4"
-                                      />{' '}
-                                      Using
-                                    </span>
-                                  ) : selected?.runtime === 'Local' &&
-                                    selected?.modelId ? (
-                                    'Use instead'
-                                  ) : (
-                                    'Use'
-                                  )}
-                                </Button>
-                              </div>
-                              {hasError && downloadState?.error && (
-                                <div className="col-span-12 mt-2 px-3">
-                                  <div className="text-xs text-destructive">
-                                    {downloadState.error}
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="mt-1 h-6 text-xs"
-                                    onClick={e => {
-                                      e.stopPropagation()
-                                      downloadModel(v)
-                                    }}
-                                  >
-                                    Retry
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                        <div className="flex justify-end pr-3">
-                          <button
-                            className="text-xs text-muted-foreground hover:text-foreground"
-                            onClick={() => setExpandedGroupId(null)}
-                          >
-                            Hide
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </>
+          <LocalModelTable
+            filteredGroups={filteredGroups}
+            query={query}
+            onQueryChange={setQuery}
+            selected={selected}
+            downloadStates={downloadStates}
+            onSelect={selectLocal}
+            onDownloadRetry={downloadModel}
+            onRefresh={handleRefresh}
+            isRefreshing={isManuallyRefreshing}
+            isLoadingCachedModels={isLoadingCachedModels}
+          />
         )}
 
         {sourceTab === 'cloud' && showModelTable && (
