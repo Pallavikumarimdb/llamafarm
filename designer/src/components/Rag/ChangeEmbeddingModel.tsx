@@ -1108,15 +1108,19 @@ function ChangeEmbeddingModel() {
         throw new Error(`Database ${database} not found in configuration`)
       }
 
-      // Validate strategy name uniqueness (if renamed)
+      // Validate strategy name uniqueness (if renamed, case-insensitive)
       const trimmedName = strategyName.trim() || originalStrategyName
-      if (trimmedName !== originalStrategyName) {
+      if (trimmedName.toLowerCase() !== originalStrategyName?.toLowerCase()) {
+        const nameLower = trimmedName.toLowerCase()
+        const originalLower = originalStrategyName?.toLowerCase()
         const nameExists = currentDb.embedding_strategies?.some(
-          (s: any) => s.name === trimmedName && s.name !== originalStrategyName
+          (s: any) =>
+            s.name?.toLowerCase() === nameLower &&
+            s.name?.toLowerCase() !== originalLower
         )
         if (nameExists) {
           throw new Error(
-            `An embedding strategy with name "${trimmedName}" already exists`
+            'A strategy with this name already exists'
           )
         }
       }

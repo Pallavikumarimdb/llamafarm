@@ -70,7 +70,7 @@ function AddEmbeddingStrategy() {
   const [error, setError] = useState<string | null>(null)
 
   // Name
-  const [name, setName] = useState('New embedding strategy')
+  const [name, setName] = useState('new-embedding-strategy')
   const [nameTouched, setNameTouched] = useState(false)
 
   // Copy from existing strategy
@@ -384,7 +384,7 @@ function AddEmbeddingStrategy() {
   useEffect(() => {
     // Check if any form field has been modified from defaults
     const hasChanges =
-      name !== 'New embedding strategy' ||
+      name !== 'new-embedding-strategy' ||
       copyFrom !== '' ||
       selected !== null ||
       baseUrl !== 'http://localhost:11434' ||
@@ -982,24 +982,27 @@ function AddEmbeddingStrategy() {
     return config
   }
 
-  // Real-time duplicate name validation
+  // Real-time duplicate name validation (case-insensitive)
+  // Check immediately for default names, or after field is touched
   const duplicateNameError = useMemo(() => {
-    if (!nameTouched || !projectResp || !name.trim()) return null
+    if (!projectResp || !name.trim()) return null
     
+    // Always check for duplicates (don't wait for touch) so default names are validated
     const projectConfig = (projectResp as any)?.project?.config
     const currentDb = projectConfig?.rag?.databases?.find(
       (db: any) => db.name === database
     )
     if (currentDb) {
+      const nameLower = name.trim().toLowerCase()
       const nameExists = currentDb.embedding_strategies?.some(
-        (s: any) => s.name === name.trim()
+        (s: any) => s.name?.toLowerCase() === nameLower
       )
       if (nameExists) {
-        return `An embedding strategy with name "${name.trim()}" already exists`
+        return 'A strategy with this name already exists'
       }
     }
     return null
-  }, [name, nameTouched, projectResp, database])
+  }, [name, projectResp, database])
 
   // Validation
   const validateStrategy = (): string[] => {
@@ -1225,7 +1228,8 @@ function AddEmbeddingStrategy() {
             disabled={
               !selected || 
               name.trim().length === 0 || 
-              (nameTouched && (!!validateStrategyName(name) || !!duplicateNameError))
+              !!validateStrategyName(name) || 
+              !!duplicateNameError
             }
           >
             Save strategy
@@ -1256,22 +1260,22 @@ function AddEmbeddingStrategy() {
               onBlur={() => setNameTouched(true)}
               placeholder="Enter a name"
               className={`h-9 ${
-                nameTouched && (validateStrategyName(name) || duplicateNameError)
+                (validateStrategyName(name) || duplicateNameError)
                   ? 'border-destructive'
                   : ''
               }`}
             />
-            {nameTouched && validateStrategyName(name) && (
+            {validateStrategyName(name) && (
               <p className="text-xs text-destructive mt-1">
                 {validateStrategyName(name)}
               </p>
             )}
-            {nameTouched && !validateStrategyName(name) && duplicateNameError && (
+            {!validateStrategyName(name) && duplicateNameError && (
               <p className="text-xs text-destructive mt-1">
                 {duplicateNameError}
               </p>
             )}
-            {(!nameTouched || (!validateStrategyName(name) && !duplicateNameError)) && (
+            {!validateStrategyName(name) && !duplicateNameError && (
               <p className="text-xs text-muted-foreground mt-1">
                 Can only contain letters, numbers, hyphens, and underscores
               </p>
@@ -1297,7 +1301,7 @@ function AddEmbeddingStrategy() {
                   onClick={() => {
                     setCopyFrom('')
                     // Reset form to defaults
-                    setName('New embedding strategy')
+                    setName('new-embedding-strategy')
                     setBaseUrl('http://localhost:11434')
                     setDimension(768)
                     setBatchSize(16)
@@ -1863,7 +1867,8 @@ function AddEmbeddingStrategy() {
                 }}
                 disabled={
                   isSaving || 
-                  (nameTouched && (!!validateStrategyName(name) || !!duplicateNameError))
+                  !!validateStrategyName(name) || 
+                  !!duplicateNameError
                 }
               >
                 {isSaving
