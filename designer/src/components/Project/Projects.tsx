@@ -21,48 +21,12 @@ const Projects = () => {
   // API hooks
   const { data: projectsResponse, isLoading, error, refetch } = useProjects(namespace)
 
-  // Debug: Log API response and network status
-  useEffect(() => {
-    console.log('🔍 Projects Component State:', {
-      namespace,
-      isLoading,
-      hasError: !!error,
-      hasData: !!projectsResponse,
-      projectCount: projectsResponse?.total || 0,
-    })
-    
-    if (projectsResponse) {
-      console.log('✅ Projects API Response:', {
-        namespace,
-        total: projectsResponse.total,
-        projects: projectsResponse.projects?.map(p => p.name) || [],
-        apiUrl: `GET /v1/projects/${namespace}`,
-      })
-      
-      if (projectsResponse.total === 0) {
-        console.warn('⚠️ API returned 0 projects. Check if projects exist in namespace:', namespace)
-      }
-    }
-    
-    if (error) {
-      console.error('❌ Projects API Error:', {
-        message: error.message,
-        namespace,
-        error: error,
-        apiUrl: `GET /v1/projects/${namespace}`,
-        suggestion: 'Check Network tab to see if request failed or returned empty',
-      })
-    }
-  }, [projectsResponse, error, namespace, isLoading])
-
   const handleRefresh = async () => {
-    console.log('🔄 Refreshing projects...', { namespace })
     queryClient.invalidateQueries({ queryKey: projectKeys.list(namespace) })
     try {
-      const result = await refetch()
-      console.log('🔄 Refresh result:', result)
+      await refetch()
     } catch (err) {
-      console.error('🔄 Refresh failed:', err)
+      // Error handling is done by React Query
     }
   }
 
