@@ -589,6 +589,14 @@ async def load_classifier(
 # Speech Model Loading
 # ============================================================================
 
+# Safe audio file extensions (whitelist for security)
+SAFE_AUDIO_EXTENSIONS = frozenset({
+    ".wav", ".mp3", ".m4a", ".webm", ".flac", ".ogg", ".mp4", ".opus", ".pcm",
+})
+
+# Silence detection threshold for decoded Opus audio (higher due to noise floor)
+SILENCE_THRESHOLD_OPUS = 0.03
+
 
 def _make_speech_cache_key(model_id: str, compute_type: str | None = None) -> str:
     """Generate a cache key for a speech model."""
