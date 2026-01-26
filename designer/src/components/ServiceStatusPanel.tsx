@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Activity,
   RefreshCw,
@@ -127,17 +127,37 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
  * Displays health status of core LlamaFarm services in a dropdown panel.
  * Auto-refreshes every 30 seconds while open.
  */
+// Minimum spin duration for visual feedback (Tailwind animate-spin is 1s)
+const MIN_SPIN_DURATION_MS = 600
+
 export function ServiceStatusPanel() {
   const [isOpen, setIsOpen] = useState(false)
   const [isSpinning, setIsSpinning] = useState(false)
+  const spinTimeoutRef = useRef<number | null>(null)
   const { services, aggregateStatus, isLoading, error, refresh } =
     useServiceHealth(isOpen)
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (spinTimeoutRef.current) {
+        clearTimeout(spinTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const handleRefresh = () => {
     setIsSpinning(true)
     refresh()
-    // Ensure at least one full spin (500ms matches animate-spin duration)
-    setTimeout(() => setIsSpinning(false), 500)
+    // Clear any existing timeout
+    if (spinTimeoutRef.current) {
+      clearTimeout(spinTimeoutRef.current)
+    }
+    // Ensure at least one visible spin
+    spinTimeoutRef.current = window.setTimeout(() => {
+      setIsSpinning(false)
+      spinTimeoutRef.current = null
+    }, MIN_SPIN_DURATION_MS)
   }
 
   const showLoading = isLoading && services.length === 0
@@ -149,6 +169,7 @@ export function ServiceStatusPanel() {
         <button
           className="relative w-8 h-7 flex items-center justify-center rounded-lg border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
           title="Service Status"
+          aria-label={`Service status: ${aggregateStatus ?? 'loading'}`}
         >
           <Activity className="w-4 h-4" />
           {aggregateStatus && (
@@ -195,6 +216,7 @@ export function ServiceStatusPanel() {
               className="p-1.5 rounded hover:bg-accent transition-colors"
               disabled={isSpinning}
               title="Refresh"
+              aria-label="Refresh service status"
             >
               <RefreshCw
                 className={cn('w-4 h-4', isSpinning && 'animate-spin')}
@@ -204,6 +226,7 @@ export function ServiceStatusPanel() {
               onClick={() => setIsOpen(false)}
               className="p-1.5 rounded hover:bg-accent transition-colors"
               title="Close"
+              aria-label="Close service status panel"
             >
               <X className="w-4 h-4" />
             </button>
@@ -214,7 +237,7 @@ export function ServiceStatusPanel() {
         {showLoading ? (
           <LoadingSpinner />
         ) : showError ? (
-          <ErrorState onRetry={refresh} />
+          <ErrorState onRetry={handleRefresh} />
         ) : (
           <>
             {/* Summary Banner */}

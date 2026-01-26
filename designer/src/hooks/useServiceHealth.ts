@@ -96,7 +96,7 @@ export function useServiceHealth(isOpen: boolean) {
     ? computeAggregateStatus(health.components)
     : null
 
-  // Filter and map services for display
+  // Filter, map, and sort services for display (consistent ordering)
   const services: ServiceDisplay[] =
     health?.components
       .filter((c) => DISPLAY_COMPONENTS.includes(c.name))
@@ -107,7 +107,8 @@ export function useServiceHealth(isOpen: boolean) {
         message: c.message,
         latencyMs: c.latency_ms,
         host: c.details?.host,
-      })) ?? []
+      }))
+      .sort((a, b) => DISPLAY_COMPONENTS.indexOf(a.id) - DISPLAY_COMPONENTS.indexOf(b.id)) ?? []
 
   return {
     services,
