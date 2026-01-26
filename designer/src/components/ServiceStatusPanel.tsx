@@ -17,15 +17,6 @@ import { useServiceHealth, AggregateStatus, ServiceDisplay } from '../hooks/useS
 import { cn } from '../lib/utils'
 
 /**
- * Status dot colors for the trigger icon
- */
-const DOT_COLORS: Record<NonNullable<AggregateStatus>, string> = {
-  healthy: 'bg-emerald-500',
-  degraded: 'bg-amber-500',
-  unhealthy: 'bg-red-500',
-}
-
-/**
  * Banner styles based on aggregate status
  */
 const BANNER_STYLES: Record<NonNullable<AggregateStatus>, string> = {
@@ -58,24 +49,45 @@ function StatusIcon({ status }: { status: ServiceDisplay['status'] }) {
 }
 
 /**
+ * Message length threshold for showing "show more" button
+ */
+const MESSAGE_TRUNCATE_LENGTH = 60
+
+/**
  * Service row component
  */
 function ServiceRow({ service }: { service: ServiceDisplay }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const shouldTruncate = service.message.length > MESSAGE_TRUNCATE_LENGTH
+
   return (
     <div className="flex items-start justify-between py-3 px-4">
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 min-w-0 flex-1">
         <div className="mt-0.5">
           <StatusIcon status={service.status} />
         </div>
-        <div className="flex flex-col">
+        <div className="flex flex-col min-w-0 flex-1">
           <span className="text-sm font-medium text-foreground">
             {service.displayName}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span
+            className={cn(
+              'text-xs text-muted-foreground break-words',
+              !isExpanded && shouldTruncate && 'line-clamp-2'
+            )}
+          >
             {service.message}
           </span>
+          {shouldTruncate && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs text-primary hover:underline self-start mt-0.5"
+            >
+              {isExpanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
           {service.host && (
-            <span className="text-[10px] text-muted-foreground/60 font-mono">
+            <span className="text-[10px] text-muted-foreground/60 font-mono break-all">
               {service.host}
             </span>
           )}
@@ -167,19 +179,11 @@ export function ServiceStatusPanel() {
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative w-8 h-7 flex items-center justify-center rounded-lg border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          className="w-8 h-7 flex items-center justify-center rounded-lg border border-border bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
           title="Service Status"
-          aria-label={`Service status: ${aggregateStatus ?? 'loading'}`}
+          aria-label="Service status"
         >
           <Activity className="w-4 h-4" />
-          {aggregateStatus && (
-            <span
-              className={cn(
-                'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full',
-                DOT_COLORS[aggregateStatus]
-              )}
-            />
-          )}
         </button>
       </DropdownMenuTrigger>
 
