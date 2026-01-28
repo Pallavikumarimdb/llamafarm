@@ -43,6 +43,7 @@ export interface UseProjectModalReturn {
 
   // Delete modal state
   isDeleteModalOpen: boolean
+  projectToDelete: string
 
   // Validation state
   projectError: string | null
@@ -92,6 +93,9 @@ export const useProjectModal = ({
 
   // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  // Store the project name to delete separately, since closeModal() resets projectName
+  // when the edit modal closes (triggered by Radix Dialog's onOpenChange)
+  const [projectToDelete, setProjectToDelete] = useState('')
 
   // API hooks
   const { data: currentProjectResponse, isLoading: isProjectLoading } =
@@ -139,6 +143,10 @@ export const useProjectModal = ({
   }
 
   const openDeleteModal = () => {
+    // Save the project name BEFORE closing the edit modal
+    // This is necessary because Radix Dialog's onOpenChange callback
+    // triggers closeModal() which resets projectName to ''
+    setProjectToDelete(projectName)
     // Close the edit modal first, then open delete modal
     setIsModalOpen(false)
     setProjectError(null)
@@ -148,6 +156,7 @@ export const useProjectModal = ({
   const closeDeleteModal = () => {
     setIsDeleteModalOpen(false)
     setProjectError(null)
+    setProjectToDelete('')
   }
 
   // Name validation with better error handling
@@ -346,10 +355,11 @@ export const useProjectModal = ({
 
   // Delete project
   const deleteProject = async (): Promise<void> => {
-    if (modalMode !== 'edit') return
+    // Use projectToDelete which was saved before the edit modal closed
+    const nameToDelete = projectToDelete
+    if (!nameToDelete) return
 
     try {
-      const nameToDelete = projectName
       await deleteProjectMutation.mutateAsync({
         namespace,
         projectId: nameToDelete,
@@ -589,6 +599,7 @@ export const useProjectModal = ({
 
     // Delete modal state
     isDeleteModalOpen,
+    projectToDelete,
 
     // Loading
     isLoading,
